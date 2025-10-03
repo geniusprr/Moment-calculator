@@ -22,8 +22,8 @@ export function ResultsPanel({ reactions, solveTimeMs, warnings = [], error }: R
     <div className="panel space-y-4 p-6">
       <div className="flex items-center justify-between">
         <div className="space-y-1">
-          <span className="tag">Solution Summary</span>
-          <p className="text-sm text-slate-400">Support reactions and solver metrics</p>
+          <span className="tag">Çözüm Özeti</span>
+          <p className="text-sm text-slate-400">Mesnet tepkileri ve çözücü metrikleri</p>
         </div>
         {solveTimeMs !== undefined && (
           <span className="rounded-full bg-slate-800/80 px-3 py-1 text-xs text-slate-300">
@@ -56,8 +56,8 @@ export function ResultsPanel({ reactions, solveTimeMs, warnings = [], error }: R
           )}
           {hasReactions && (
             <div className="panel-muted col-span-full p-4 text-sm text-slate-300">
-              <p className="font-medium text-slate-200">Equilibrium check</p>
-              <p>Sum of reactions = {numberFormatter.format(totalReaction)} kN</p>
+              <p className="font-medium text-slate-200">Denge kontrolü</p>
+              <p>Tepki toplamı = {numberFormatter.format(totalReaction)} kN</p>
             </div>
           )}
         </div>
@@ -65,7 +65,7 @@ export function ResultsPanel({ reactions, solveTimeMs, warnings = [], error }: R
 
       {warnings.length > 0 && (
         <div className="panel-muted border border-amber-400/40 bg-amber-500/10 p-4 text-xs text-amber-100">
-          <p className="mb-2 font-semibold">Warnings</p>
+          <p className="mb-2 font-semibold">Uyarılar</p>
           <ul className="space-y-2">
             {warnings.map((warning) => (
               <li key={warning}>- {warning}</li>

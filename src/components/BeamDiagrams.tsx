@@ -14,7 +14,7 @@ interface BeamDiagramsProps {
 
 const Plot = dynamic(() => import("react-plotly.js"), { ssr: false });
 
-function diagramLayout(title: string, color: string): Partial<Layout> {
+function diagramLayout(title: string, color: string, autorange: "reversed" | true = true): Partial<Layout> {
   return {
     paper_bgcolor: "rgba(15,23,42,0)",
     plot_bgcolor: "rgba(15,23,42,0)",
@@ -29,7 +29,8 @@ function diagramLayout(title: string, color: string): Partial<Layout> {
       title: { text: title, font: { color } },
       tickfont: { color: "#94a3b8" },
       gridcolor: "rgba(148,163,184,0.2)",
-      zerolinecolor: "rgba(148,163,184,0.35)"
+      zerolinecolor: "rgba(148,163,184,0.35)",
+      autorange
     },
     transition: { duration: 300, easing: "cubic-in-out" }
   };
@@ -52,12 +53,12 @@ function diagramData(x: number[], values: number[], color: string, label: string
 
 export function BeamDiagrams({ x, shear, moment, normal, loading = false }: BeamDiagramsProps) {
   const shearPlot = useMemo(
-    () => ({ data: diagramData(x, shear, "#38bdf8", "V"), layout: diagramLayout("V (kN)", "#38bdf8") }),
+    () => ({ data: diagramData(x, shear, "#38bdf8", "T"), layout: diagramLayout("T (kN)", "#38bdf8") }),
     [x, shear]
   );
   const momentPlot = useMemo(
-    // Flip moment sign so that bottom is negative and top is positive
-    () => ({ data: diagramData(x, moment.map((v) => -v), "#a855f7", "M"), layout: diagramLayout("M (kNm)", "#a855f7") }),
+    // Reverse y-axis only: positive values show downward (below axis), negative values show upward (above axis)
+    () => ({ data: diagramData(x, moment, "#a855f7", "M"), layout: diagramLayout("M (kNm)", "#a855f7", "reversed") }),
     [x, moment]
   );
   const normalPlot = useMemo(
@@ -71,10 +72,10 @@ export function BeamDiagrams({ x, shear, moment, normal, loading = false }: Beam
     <div className="panel space-y-4 p-6">
       <div className="flex items-center justify-between">
         <div>
-          <span className="tag">Diagrams</span>
-          <p className="text-sm text-slate-400">Shear, moment and axial force stacked for quick reading</p>
+          <span className="tag">Diyagramlar</span>
+          <p className="text-sm text-slate-400">Kesme, moment ve eksenel kuvvet diyagramları</p>
         </div>
-        {loading && <span className="text-xs uppercase tracking-wide text-slate-400">Solving...</span>}
+        {loading && <span className="text-xs uppercase tracking-wide text-slate-400">Çözülüyor...</span>}
       </div>
       {hasData ? (
         <div className="space-y-6">
@@ -87,7 +88,7 @@ export function BeamDiagrams({ x, shear, moment, normal, loading = false }: Beam
         </div>
       ) : (
         <div className="panel-muted flex h-[360px] items-center justify-center text-sm text-slate-500">
-          Run a solution to see the diagrams.
+          Diyagramları görmek için çözüm çalıştırın.
         </div>
       )}
     </div>

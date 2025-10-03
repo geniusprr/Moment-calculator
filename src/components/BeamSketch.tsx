@@ -259,20 +259,16 @@ export function BeamSketch({
         openContextMenu(event, { kind: "blank", x });
       }}
     >
-      <div className="flex items-center justify-between">
-        <span className="tag">Kiriş Çizimi</span>
-        <p className="text-xs text-slate-400">Sürükleyerek ayarlayın. Hızlı işlemler için sağ tıklayın.</p>
-      </div>
-      <div ref={containerRef} className="relative h-40 select-none rounded-xl border border-slate-800/60 bg-slate-900/60">
-        {/* Simplified beam bar - reduced side margins to fill width */}
-        <div className="absolute left-[2%] right-[2%] top-1/2 h-3 -translate-y-1/2 rounded bg-slate-200/80 shadow-sm" />
+      <div ref={containerRef} className="relative h-56 select-none rounded-xl border border-slate-800/60 bg-slate-900/60">
+        {/* Simplified beam bar - positioned in middle */}
+        <div className="absolute left-[2%] right-[2%] h-3 rounded bg-slate-200/80 shadow-sm" style={{ top: 'calc(50% - 15px)' }} />
 
-        {/* Simplified support markers (larger) */}
+        {/* Simplified support markers - below the beam, tip touching it */}
         {supportMarkers.map((support) => (
           <div
             key={support.id}
-            className="absolute bottom-6 flex translate-x-[-50%] flex-col items-center gap-1"
-            style={{ left: `${2 + (support.percent * 0.96)}%` }}
+            className="absolute flex translate-x-[-50%] flex-col items-center gap-1"
+            style={{ left: `${2 + (support.percent * 0.96)}%`, top: 'calc(50% - 3px)' }}
             onContextMenu={(event) => openContextMenu(event, { kind: "support", id: support.id, x: support.position })}
           >
             <div
@@ -288,108 +284,122 @@ export function BeamSketch({
           </div>
         ))}
 
-        {/* Simplified point loads */}
+        {/* Simplified point loads - above the beam, touching it */}
         {pointHandles.map((load) => (
           <div
             key={load.id}
-            className="absolute top-2 flex translate-x-[-50%] flex-col items-center gap-1"
-            style={{ left: `${2 + (load.percent * 0.96)}%` }}
+            className="absolute flex translate-x-[-50%] flex-col items-center cursor-ew-resize z-40"
+            style={{ left: `${2 + (load.percent * 0.96)}%`, bottom: 'calc(50% + 18px)' }}
             onContextMenu={(event) => openContextMenu(event, { kind: "point", id: load.id, x: load.position })}
+            onPointerDown={beginDrag({ type: "point", id: load.id, pointerId: 0 })}
           >
-            <div
-              className="cursor-ew-resize"
-              onPointerDown={beginDrag({ type: "point", id: load.id, pointerId: 0 })}
-            >
-              {/* Simplified arrow */}
-              <svg
-                className="h-8 w-8 text-red-500"
-                viewBox="0 0 24 32"
-                style={{ transform: `rotate(${load.angleDeg}deg)` }}
-              >
-                <line x1="12" y1="2" x2="12" y2="22" stroke="currentColor" strokeWidth="2" />
-                <polygon points="6,22 18,22 12,30" fill="currentColor" />
-              </svg>
-            </div>
-            <span className="rounded bg-red-500/20 px-1 py-0.5 text-xs text-red-200">
+            <span className="mb-0.5 rounded bg-red-500/90 px-1.5 py-0.5 text-xs font-semibold text-white">
               {load.id}: {load.magnitude.toFixed(1)}kN
             </span>
+            {/* Arrow pointing down towards the beam */}
+            <svg
+              className="h-16 w-6 text-red-500"
+              viewBox="0 0 24 64"
+              style={{ transform: `rotate(${load.angleDeg + 90}deg)` }}
+            >
+              <line x1="12" y1="0" x2="12" y2="54" stroke="currentColor" strokeWidth="2.5" />
+              <polygon points="6,54 18,54 12,64" fill="currentColor" />
+            </svg>
           </div>
         ))}
 
-        {/* UDL spans rebuilt: draggable start/end + whole-span center drag + center direction/magnitude */}
+        {/* UDL spans rebuilt: draggable start/end + whole-span center drag + arrows touching beam */}
         {udlSpans.map((load) => {
           const startPos = 2 + (load.startPercent * 0.96);
           const width = (load.endPercent - load.startPercent) * 0.96;
           const endPos = startPos + width;
+          const arrowCount = Math.max(3, Math.min(8, Math.floor(width * 0.5))); // Daha az ok
           return (
             <div
               key={load.id}
-              className="absolute inset-x-0 top-8 h-14 z-30"
+              className="absolute inset-x-0 z-30"
+              style={{ bottom: 'calc(50% + 15px)', height: '70px' }}
               onContextMenu={(event) => openContextMenu(event, { kind: "udl", id: load.id, x: (load.start + load.end) / 2 })}
             >
-              {/* UDL bar - daha belirgin arka plan */}
+              {/* Magnitude label at top */}
               <div
-                className="absolute h-6 rounded bg-orange-500 cursor-grab hover:bg-orange-400 border-2 border-orange-600 shadow-lg"
-                style={{ left: `${startPos}%`, width: `${width}%` }}
-                onPointerDown={beginDrag({ type: "udl-center", id: load.id, pointerId: 0 })}
+                className="absolute pointer-events-none"
+                style={{ left: `${startPos + width / 2}%`, transform: "translateX(-50%)", top: "0px" }}
+              >
+                <span className="rounded bg-orange-600/90 px-2 py-0.5 text-xs font-semibold text-white">
+                  {load.magnitude.toFixed(1)} kN/m
+                </span>
+              </div>
+
+              {/* Horizontal line at top connecting arrows */}
+              <div
+                className="absolute h-0.5 bg-orange-500"
+                style={{ left: `${startPos}%`, width: `${width}%`, top: '28px' }}
               />
 
-              {/* Start drag handle - daha büyük ve belirgin */}
+              {/* Multiple arrows representing distributed load */}
               <div
-                className="absolute -top-1 h-8 w-4 translate-x-[-50%] cursor-ew-resize rounded bg-orange-300 hover:bg-orange-200 border border-orange-500 shadow-md"
-                style={{ left: `${startPos}%` }}
+                className="absolute cursor-grab hover:opacity-80"
+                style={{ left: `${startPos}%`, width: `${width}%`, top: '28px', height: '42px' }}
+                onPointerDown={beginDrag({ type: "udl-center", id: load.id, pointerId: 0 })}
+              >
+                {Array.from({ length: arrowCount }).map((_, i) => {
+                  const position = (i / (arrowCount - 1)) * 100;
+                  return (
+                    <svg
+                      key={i}
+                      className="absolute text-orange-500"
+                      style={{ left: `${position}%`, transform: 'translateX(-50%)', top: '0' }}
+                      width="16"
+                      height="42"
+                      viewBox="0 0 16 42"
+                    >
+                      <line x1="8" y1="0" x2="8" y2="34" stroke="currentColor" strokeWidth="2" />
+                      <polygon points="4,34 12,34 8,42" fill="currentColor" />
+                    </svg>
+                  );
+                })}
+              </div>
+
+              {/* Invisible start drag handle */}
+              <div
+                className="absolute h-10 w-8 translate-x-[-50%] cursor-ew-resize z-10"
+                style={{ left: `${startPos}%`, top: '28px' }}
                 onPointerDown={beginDrag({ type: "udl-start", id: load.id, pointerId: 0 })}
                 title="Yayılı yük başlangıcını sürükle"
               />
 
-              {/* End drag handle - daha büyük ve belirgin */}
+              {/* Invisible end drag handle */}
               <div
-                className="absolute -top-1 h-8 w-4 translate-x-[-50%] cursor-ew-resize rounded bg-orange-300 hover:bg-orange-200 border border-orange-500 shadow-md"
-                style={{ left: `${endPos}%` }}
+                className="absolute h-10 w-8 translate-x-[-50%] cursor-ew-resize z-10"
+                style={{ left: `${endPos}%`, top: '28px' }}
                 onPointerDown={beginDrag({ type: "udl-end", id: load.id, pointerId: 0 })}
                 title="Yayılı yük bitişini sürükle"
               />
-
-              {/* Merkezde yön ve üstte kuvvet etiketi */}
-              <div
-                className="absolute pointer-events-none flex flex-col items-center"
-                style={{ left: `${startPos + width / 2}%`, transform: "translateX(-50%)", top: "-6px" }}
-              >
-                <span className="mb-1 rounded bg-orange-600/80 px-2 py-0.5 text-sm font-semibold text-orange-100">
-                  {load.magnitude.toFixed(1)} kN/m
-                </span>
-                <span className="text-lg font-bold text-orange-900 drop-shadow">
-                  {load.direction === "down" ? "↓" : "↑"}
-                </span>
-              </div>
             </div>
           );
         })}
 
-        {/* Simplified moment loads */}
+        {/* Simplified moment loads - above the beam, touching it */}
         {momentHandles.map((moment) => (
           <div
             key={moment.id}
-            className="absolute top-2 flex translate-x-[-50%] flex-col items-center gap-1"
-            style={{ left: `${2 + (moment.percent * 0.96)}%` }}
+            className="absolute flex translate-x-[-50%] flex-col items-center gap-1 cursor-ew-resize z-40"
+            style={{ left: `${2 + (moment.percent * 0.96)}%`, bottom: 'calc(50% + 21px)' }}
             onContextMenu={(event) => openContextMenu(event, { kind: "moment", id: moment.id, x: moment.position })}
+            onPointerDown={beginDrag({ type: "moment", id: moment.id, pointerId: 0 })}
           >
-            <div
-              className="cursor-ew-resize"
-              onPointerDown={beginDrag({ type: "moment", id: moment.id, pointerId: 0 })}
-            >
-              <div
-                className={clsx(
-                  "flex h-6 w-6 items-center justify-center rounded-full border text-xs font-bold",
-                  moment.direction === "ccw" ? "border-emerald-300 text-emerald-200" : "border-rose-300 text-rose-200",
-                )}
-              >
-                {moment.direction === "ccw" ? "↻" : "↺"}
-              </div>
-            </div>
-            <span className="rounded bg-slate-800/70 px-1 py-0.5 text-xs text-slate-200">
-              {moment.id}: {moment.magnitude.toFixed(1)}kN·m
+            <span className="rounded bg-slate-800/90 px-2 py-0.5 text-xs font-semibold text-slate-200 pointer-events-none">
+              {moment.magnitude.toFixed(1)} kN·m
             </span>
+            <div
+              className={clsx(
+                "flex h-8 w-8 items-center justify-center rounded-full border-2 text-lg font-bold",
+                moment.direction === "ccw" ? "border-emerald-300 text-emerald-200" : "border-rose-300 text-rose-200",
+              )}
+            >
+              {moment.direction === "ccw" ? "↻" : "↺"}
+            </div>
           </div>
         ))}
 
@@ -399,19 +409,42 @@ export function BeamSketch({
           <span>{beamLength.toFixed(1)} m</span>
         </div>
 
-        {/* Dinamik parça mesafeleri (komşu noktalar arası) */}
+        {/* Dinamik parça mesafeleri (komşu noktalar arası) - below the beam with dimension lines */}
         {dimensionSegments.map((seg, idx) => {
           const mid = (seg.start + seg.end) / 2;
           const midPercent = positionToPercent(mid);
+          const startPercent = positionToPercent(seg.start);
+          const endPercent = positionToPercent(seg.end);
           const text = `${(seg.end - seg.start).toFixed(2)} m`;
           return (
-            <span
-              key={`dim-${idx}`}
-              className="absolute text-sm font-medium text-slate-300"
-              style={{ left: `${2 + midPercent * 0.96}%`, transform: "translateX(-50%)", top: "calc(50% - 28px)" }}
-            >
-              {text}
-            </span>
+            <div key={`dim-${idx}`}>
+              {/* Start vertical line */}
+              <div
+                className="absolute w-0.5 h-8 bg-slate-400"
+                style={{ left: `${2 + startPercent * 0.96}%`, top: "calc(50% + 45px)" }}
+              />
+              {/* End vertical line */}
+              <div
+                className="absolute w-0.5 h-8 bg-slate-400"
+                style={{ left: `${2 + endPercent * 0.96}%`, top: "calc(50% + 45px)" }}
+              />
+              {/* Horizontal dimension line */}
+              <div
+                className="absolute h-0.5 bg-slate-400"
+                style={{ 
+                  left: `${2 + startPercent * 0.96}%`, 
+                  width: `${(endPercent - startPercent) * 0.96}%`,
+                  top: "calc(50% + 53px)"
+                }}
+              />
+              {/* Distance text */}
+              <span
+                className="absolute text-xs font-medium text-slate-300 bg-slate-800/80 px-1.5 py-0.5 rounded"
+                style={{ left: `${2 + midPercent * 0.96}%`, transform: "translateX(-50%)", top: "calc(50% + 58px)" }}
+              >
+                {text}
+              </span>
+            </div>
           );
         })}
       </div>

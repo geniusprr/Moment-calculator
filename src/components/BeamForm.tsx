@@ -130,47 +130,48 @@ export function BeamForm({
         ) : (
           <div className="space-y-3">
             {supports.map((support) => (
-              <div key={support.id} className="panel-muted grid gap-3 border border-slate-800/60 p-4 sm:grid-cols-5">
-                <label className="space-y-1">
-                  <span className={labelClass}>Etiket</span>
-                  <input
-                    type="text"
-                    className={fieldClasses}
-                    value={support.id}
-                    onChange={(event) => onSupportChange(support.id, "id", event.target.value.toUpperCase())}
-                  />
-                </label>
-                <label className="space-y-1">
-                  <span className={labelClass}>Tip</span>
-                  <select
-                    className={fieldClasses}
-                    value={support.type}
-                    onChange={(event) => onSupportChange(support.id, "type", event.target.value)}
-                  >
-                    <option value="pin">Menteşe</option>
-                    <option value="roller">Kayar</option>
-                  </select>
-                </label>
-                <label className="space-y-1 sm:col-span-2">
-                  <span className={labelClass}>Konum (m)</span>
-                  <input
-                    type="number"
-                    min={0}
-                    max={length}
-                    step={0.1}
-                    className={fieldClasses}
-                    value={support.position}
-                    onChange={(event) => onSupportChange(support.id, "position", Number(event.target.value))}
-                  />
-                </label>
-                <div className="flex items-end justify-end">
-                  <button
-                    type="button"
-                    onClick={() => onRemoveSupport(support.id)}
-                    className="text-xs text-rose-300 transition hover:text-rose-200"
-                  >
-                    Kaldır
-                  </button>
+              <div key={support.id} className="panel-muted relative flex flex-col gap-3 border border-slate-800/60 p-4">
+                <button
+                  type="button"
+                  onClick={() => onRemoveSupport(support.id)}
+                  className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-rose-500/20 text-rose-300 transition hover:bg-rose-500/40 hover:text-rose-200"
+                  title="Kaldır"
+                >
+                  ×
+                </button>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <label className="space-y-1">
+                    <span className={labelClass}>Etiket</span>
+                    <input
+                      type="text"
+                      className={fieldClasses}
+                      value={support.id}
+                      onChange={(event) => onSupportChange(support.id, "id", event.target.value.toUpperCase())}
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className={labelClass}>Tip</span>
+                    <select
+                      className={fieldClasses}
+                      value={support.type}
+                      onChange={(event) => onSupportChange(support.id, "type", event.target.value)}
+                    >
+                      <option value="pin">Menteşe</option>
+                      <option value="roller">Kayar</option>
+                    </select>
+                  </label>
+                  <label className="space-y-1">
+                    <span className={labelClass}>Konum (m)</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={length}
+                      step={0.1}
+                      className={fieldClasses}
+                      value={support.position}
+                      onChange={(event) => onSupportChange(support.id, "position", Number(event.target.value))}
+                    />
+                  </label>
                 </div>
               </div>
             ))}
@@ -194,60 +195,63 @@ export function BeamForm({
         ) : (
           <div className="space-y-3">
             {pointLoads.map((load) => (
-              <div key={load.id} className="panel-muted grid gap-3 border border-slate-800/60 p-4 sm:grid-cols-6">
-                <label className="space-y-1">
-                  <span className={labelClass}>Etiket</span>
-                  <input
-                    type="text"
-                    className={fieldClasses}
-                    value={load.id}
-                    onChange={(event) => onPointLoadChange(load.id, "id", event.target.value.toUpperCase())}
-                  />
-                </label>
-                <label className="space-y-1">
-                  <span className={labelClass}>Büyüklük (kN)</span>
-                  <input
-                    type="number"
-                    min={0}
-                    step={0.1}
-                    className={fieldClasses}
-                    value={load.magnitude}
-                    onChange={(event) => onPointLoadChange(load.id, "magnitude", Number(event.target.value))}
-                  />
-                </label>
-                <label className="space-y-1">
-                  <span className={labelClass}>Konum (m)</span>
-                  <input
-                    type="number"
-                    min={0}
-                    max={length}
-                    step={0.1}
-                    className={fieldClasses}
-                    value={load.position}
-                    onChange={(event) => onPointLoadChange(load.id, "position", Number(event.target.value))}
-                  />
-                </label>
-                <label className="space-y-1 sm:col-span-2">
-                  <span className={labelClass}>Açı (derece)</span>
-                  <input
-                    type="number"
-                    min={-180}
-                    max={180}
-                    step={5}
-                    className={fieldClasses}
-                    value={load.angleDeg}
-                    onChange={(event) => onPointLoadChange(load.id, "angleDeg", Number(event.target.value))}
-                  />
-                  <p className="text-[11px] text-slate-500">0 = sağ, -90 = aşağı, 90 = yukarı</p>
-                </label>
-                <div className="flex items-end justify-end">
-                  <button
-                    type="button"
-                    onClick={() => onRemovePointLoad(load.id)}
-                    className="text-xs text-rose-300 transition hover:text-rose-200"
-                  >
-                    Kaldır
-                  </button>
+              <div key={load.id} className="panel-muted relative flex flex-col gap-3 border border-slate-800/60 p-4">
+                <button
+                  type="button"
+                  onClick={() => onRemovePointLoad(load.id)}
+                  className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-rose-500/20 text-rose-300 transition hover:bg-rose-500/40 hover:text-rose-200"
+                  title="Kaldır"
+                >
+                  ×
+                </button>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="space-y-1">
+                    <span className={labelClass}>Etiket</span>
+                    <input
+                      type="text"
+                      className={fieldClasses}
+                      value={load.id}
+                      onChange={(event) => onPointLoadChange(load.id, "id", event.target.value.toUpperCase())}
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className={labelClass}>Büyüklük (kN)</span>
+                    <input
+                      type="number"
+                      min={0}
+                      step={0.1}
+                      className={fieldClasses}
+                      value={load.magnitude}
+                      onChange={(event) => onPointLoadChange(load.id, "magnitude", Number(event.target.value))}
+                    />
+                  </label>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="space-y-1">
+                    <span className={labelClass}>Konum (m)</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={length}
+                      step={0.1}
+                      className={fieldClasses}
+                      value={load.position}
+                      onChange={(event) => onPointLoadChange(load.id, "position", Number(event.target.value))}
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className={labelClass}>Açı (derece)</span>
+                    <input
+                      type="number"
+                      min={-180}
+                      max={180}
+                      step={5}
+                      className={fieldClasses}
+                      value={load.angleDeg}
+                      onChange={(event) => onPointLoadChange(load.id, "angleDeg", Number(event.target.value))}
+                    />
+                    <p className="text-[11px] text-slate-500">0 = sağ, -90 = aşağı, 90 = yukarı</p>
+                  </label>
                 </div>
               </div>
             ))}
@@ -271,70 +275,73 @@ export function BeamForm({
         ) : (
           <div className="space-y-3">
             {udls.map((load) => (
-              <div key={load.id} className="panel-muted grid gap-3 border border-slate-800/60 p-4 sm:grid-cols-6">
-                <label className="space-y-1">
-                  <span className={labelClass}>Etiket</span>
-                  <input
-                    type="text"
-                    className={fieldClasses}
-                    value={load.id}
-                    onChange={(event) => onUdlChange(load.id, "id", event.target.value.toUpperCase())}
-                  />
-                </label>
-                <label className="space-y-1">
-                  <span className={labelClass}>Yoğunluk (kN/m)</span>
-                  <input
-                    type="number"
-                    min={0}
-                    step={0.1}
-                    className={fieldClasses}
-                    value={load.magnitude}
-                    onChange={(event) => onUdlChange(load.id, "magnitude", Number(event.target.value))}
-                  />
-                </label>
-                <label className="space-y-1">
-                  <span className={labelClass}>Başlangıç (m)</span>
-                  <input
-                    type="number"
-                    min={0}
-                    max={length}
-                    step={0.1}
-                    className={fieldClasses}
-                    value={load.start}
-                    onChange={(event) => onUdlChange(load.id, "start", Number(event.target.value))}
-                  />
-                </label>
-                <label className="space-y-1">
-                  <span className={labelClass}>Bitiş (m)</span>
-                  <input
-                    type="number"
-                    min={0}
-                    max={length}
-                    step={0.1}
-                    className={fieldClasses}
-                    value={load.end}
-                    onChange={(event) => onUdlChange(load.id, "end", Number(event.target.value))}
-                  />
-                </label>
-                <label className="space-y-1">
-                  <span className={labelClass}>Yön</span>
-                  <select
-                    className={fieldClasses}
-                    value={load.direction}
-                    onChange={(event) => onUdlChange(load.id, "direction", event.target.value)}
-                  >
-                    <option value="down">Aşağı</option>
-                    <option value="up">Yukarı</option>
-                  </select>
-                </label>
-                <div className="flex items-end justify-end">
-                  <button
-                    type="button"
-                    onClick={() => onRemoveUdl(load.id)}
-                    className="text-xs text-rose-300 transition hover:text-rose-200"
-                  >
-                    Kaldır
-                  </button>
+              <div key={load.id} className="panel-muted relative flex flex-col gap-3 border border-slate-800/60 p-4">
+                <button
+                  type="button"
+                  onClick={() => onRemoveUdl(load.id)}
+                  className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-rose-500/20 text-rose-300 transition hover:bg-rose-500/40 hover:text-rose-200"
+                  title="Kaldır"
+                >
+                  ×
+                </button>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="space-y-1">
+                    <span className={labelClass}>Etiket</span>
+                    <input
+                      type="text"
+                      className={fieldClasses}
+                      value={load.id}
+                      onChange={(event) => onUdlChange(load.id, "id", event.target.value.toUpperCase())}
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className={labelClass}>Yoğunluk (kN/m)</span>
+                    <input
+                      type="number"
+                      min={0}
+                      step={0.1}
+                      className={fieldClasses}
+                      value={load.magnitude}
+                      onChange={(event) => onUdlChange(load.id, "magnitude", Number(event.target.value))}
+                    />
+                  </label>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <label className="space-y-1">
+                    <span className={labelClass}>Başlangıç&nbsp;(m)</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={length}
+                      step={0.1}
+                      className={fieldClasses}
+                      value={load.start}
+                      onChange={(event) => onUdlChange(load.id, "start", Number(event.target.value))}
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className={labelClass}>Bitiş&nbsp;(m)</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={length}
+                      step={0.1}
+                      className={fieldClasses}
+                      value={load.end}
+                      onChange={(event) => onUdlChange(load.id, "end", Number(event.target.value))}
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className={labelClass}>Yön</span>
+                    <select
+                      className={fieldClasses}
+                      value={load.direction}
+                      onChange={(event) => onUdlChange(load.id, "direction", event.target.value)}
+                    >
+                      <option value="down">Aşağı</option>
+                      <option value="up">Yukarı</option>
+                    </select>
+                  </label>
                 </div>
               </div>
             ))}
@@ -358,58 +365,61 @@ export function BeamForm({
         ) : (
           <div className="space-y-3">
             {momentLoads.map((moment) => (
-              <div key={moment.id} className="panel-muted grid gap-3 border border-slate-800/60 p-4 sm:grid-cols-5">
-                <label className="space-y-1">
-                  <span className={labelClass}>Etiket</span>
-                  <input
-                    type="text"
-                    className={fieldClasses}
-                    value={moment.id}
-                    onChange={(event) => onMomentChange(moment.id, "id", event.target.value.toUpperCase())}
-                  />
-                </label>
-                <label className="space-y-1">
-                  <span className={labelClass}>Büyüklük (kN·m)</span>
-                  <input
-                    type="number"
-                    min={0}
-                    step={0.1}
-                    className={fieldClasses}
-                    value={moment.magnitude}
-                    onChange={(event) => onMomentChange(moment.id, "magnitude", Number(event.target.value))}
-                  />
-                </label>
-                <label className="space-y-1">
-                  <span className={labelClass}>Konum (m)</span>
-                  <input
-                    type="number"
-                    min={0}
-                    max={length}
-                    step={0.1}
-                    className={fieldClasses}
-                    value={moment.position}
-                    onChange={(event) => onMomentChange(moment.id, "position", Number(event.target.value))}
-                  />
-                </label>
-                <label className="space-y-1">
-                  <span className={labelClass}>Yön</span>
-                  <select
-                    className={fieldClasses}
-                    value={moment.direction}
-                    onChange={(event) => onMomentChange(moment.id, "direction", event.target.value)}
-                  >
-                    <option value="ccw">Saat yönü tersine</option>
-                    <option value="cw">Saat yönünde</option>
-                  </select>
-                </label>
-                <div className="flex items-end justify-end">
-                  <button
-                    type="button"
-                    onClick={() => onRemoveMoment(moment.id)}
-                    className="text-xs text-rose-300 transition hover:text-rose-200"
-                  >
-                    Kaldır
-                  </button>
+              <div key={moment.id} className="panel-muted relative flex flex-col gap-3 border border-slate-800/60 p-4">
+                <button
+                  type="button"
+                  onClick={() => onRemoveMoment(moment.id)}
+                  className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-rose-500/20 text-rose-300 transition hover:bg-rose-500/40 hover:text-rose-200"
+                  title="Kaldır"
+                >
+                  ×
+                </button>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="space-y-1">
+                    <span className={labelClass}>Etiket</span>
+                    <input
+                      type="text"
+                      className={fieldClasses}
+                      value={moment.id}
+                      onChange={(event) => onMomentChange(moment.id, "id", event.target.value.toUpperCase())}
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className={labelClass}>Büyüklük (kN·m)</span>
+                    <input
+                      type="number"
+                      min={0}
+                      step={0.1}
+                      className={fieldClasses}
+                      value={moment.magnitude}
+                      onChange={(event) => onMomentChange(moment.id, "magnitude", Number(event.target.value))}
+                    />
+                  </label>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="space-y-1">
+                    <span className={labelClass}>Konum (m)</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={length}
+                      step={0.1}
+                      className={fieldClasses}
+                      value={moment.position}
+                      onChange={(event) => onMomentChange(moment.id, "position", Number(event.target.value))}
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className={labelClass}>Yön</span>
+                    <select
+                      className={fieldClasses}
+                      value={moment.direction}
+                      onChange={(event) => onMomentChange(moment.id, "direction", event.target.value)}
+                    >
+                      <option value="ccw">Saat yönü tersine</option>
+                      <option value="cw">Saat yönünde</option>
+                    </select>
+                  </label>
                 </div>
               </div>
             ))}

@@ -76,7 +76,7 @@ const PRESETS: PresetConfig[] = [
         { id: "A", type: "pin", position: 0 },
         { id: "B", type: "roller", position: 10 },
       ],
-      pointLoads: [{ id: "P1", magnitude: 15, position: 5, angleDeg: -90 }],
+      pointLoads: [{ id: "F1", magnitude: 15, position: 5, angleDeg: -90 }],
       udls: [{ id: "Q1", magnitude: 5, start: 6, end: 10, direction: "down" }],
       momentLoads: [],
       samplingPoints: 401,
@@ -457,15 +457,25 @@ export default function HomePage() {
   const handleAddPointLoad = useCallback(
     (position?: number) => {
       clearPresetSelection();
-      setPointLoads((current) => [
-        ...current,
-        {
-          id: createRandomId(),
-          magnitude: 5,
-          position: clampValue(position ?? length / 2, 0, length),
-          angleDeg: -90,
-        },
-      ]);
+      setPointLoads((current) => {
+        // Find the next available F number (F1, F2, F3, ...)
+        const existingNumbers = current
+          .map((load) => {
+            const match = load.id.match(/^F(\d+)$/);
+            return match ? parseInt(match[1], 10) : 0;
+          })
+          .filter((num) => num > 0);
+        const nextNumber = existingNumbers.length > 0 ? Math.max(...existingNumbers) + 1 : 1;
+        return [
+          ...current,
+          {
+            id: `F${nextNumber}`,
+            magnitude: 5,
+            position: clampValue(position ?? length / 2, 0, length),
+            angleDeg: -90,
+          },
+        ];
+      });
     },
     [clearPresetSelection, length],
   );
@@ -629,16 +639,16 @@ export default function HomePage() {
        <div className="mx-auto flex w-full max-w-none flex-col gap-5 px-4 pt-4 sm:px-6">
         <section className="panel space-y-4 p-4 sm:p-5">
           <div className="flex items-center justify-between">
-            <span className="tag">Presets</span>
+            <span className="tag">Ön Ayarlar</span>
             <button
               type="button"
               onClick={handleReset}
               className="rounded-full border border-slate-700/70 px-3 py-1 text-xs text-slate-300 transition hover:border-slate-500 hover:text-white"
             >
-              Reset to default
+              Varsayılana sıfırla
             </button>
           </div>
-          <p className="text-xs text-slate-400">Start from a template or keep refining your custom beam.</p>
+          <p className="text-xs text-slate-400">Bir şablondan başlayın veya özel kiriş tasarımınızı geliştirmeye devam edin.</p>
           <div className="flex flex-col gap-3 md:flex-row md:flex-wrap">
             {PRESETS.map((preset) => (
               <button
