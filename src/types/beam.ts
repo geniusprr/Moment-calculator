@@ -49,6 +49,32 @@ export interface SupportReaction {
   axial: number;
 }
 
+export interface SolutionStep {
+  step_number: number;
+  title: string;
+  explanation: string;
+  general_formula?: string;
+  substituted_formula?: string;
+  numerical_result?: string;
+}
+
+export interface SolutionMethod {
+  method_name: string;
+  method_title: string;
+  description: string;
+  steps: SolutionStep[];
+}
+
+export interface DetailedSolution {
+  methods: SolutionMethod[];
+  diagram?: {
+    x: number[];
+    shear: number[];
+    moment: number[];
+    normal: number[];
+  };
+}
+
 export interface BeamSolveResponse {
   reactions: SupportReaction[];
   diagram: {
@@ -62,4 +88,5 @@ export interface BeamSolveResponse {
     solve_time_ms: number;
     validation_warnings: string[];
   };
+  detailed_solutions?: DetailedSolution;
 }

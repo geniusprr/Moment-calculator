@@ -100,8 +100,30 @@ class SolveMeta(BaseModel):
     validation_warnings: List[str]
 
 
+class SolutionStep(BaseModel):
+    step_number: int
+    title: str
+    explanation: str
+    general_formula: Optional[str] = None  # Genel formül (LaTeX)
+    substituted_formula: Optional[str] = None  # Değerlerin yerine konulmuş hali (LaTeX)
+    numerical_result: Optional[str] = None
+
+
+class SolutionMethod(BaseModel):
+    method_name: str
+    method_title: str
+    description: str
+    steps: List[SolutionStep]
+
+
+class DetailedSolution(BaseModel):
+    methods: List[SolutionMethod]
+    diagram: Optional[DiagramData] = None  # Grafik verileri çözüm adımlarında gösterilmek üzere
+
+
 class SolveResponse(BaseModel):
     reactions: List[SupportReaction]
     diagram: DiagramData
     derivations: List[str]
     meta: SolveMeta
+    detailed_solutions: Optional[DetailedSolution] = None

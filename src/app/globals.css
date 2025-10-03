@@ -31,4 +31,21 @@
   .tag {
     @apply inline-flex items-center gap-2 rounded-full border border-cyan-500/40 bg-cyan-500/10 px-3 py-1 text-xs font-medium uppercase tracking-wide text-cyan-200;
   }
+
+  /* Smooth scrollbar for detailed solution panel */
+  .overflow-y-auto::-webkit-scrollbar {
+    width: 12px;
+  }
+
+  .overflow-y-auto::-webkit-scrollbar-track {
+    @apply bg-slate-900/50;
+    border-radius: 6px;
+  }
+
+  .overflow-y-auto::-webkit-scrollbar-thumb {
+    @apply bg-slate-700 hover:bg-slate-600;
+    border-radius: 6px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
 }
