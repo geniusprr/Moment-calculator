@@ -2,6 +2,7 @@
 
 import clsx from "clsx";
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import { BlockMath } from "react-katex";
 
 import { BeamDiagrams } from "@/components/BeamDiagrams";
 import { BeamForm } from "@/components/BeamForm";
@@ -594,33 +595,33 @@ export default function HomePage() {
         const canAddSupport = supports.length < 2;
         return [
           {
-            label: canAddSupport ? "Add support" : "Add support (two max)",
+            label: canAddSupport ? "Mesnet ekle" : "Mesnet ekle (en fazla iki)",
             disabled: !canAddSupport,
             action: () => handleAddSupport(target.x),
           },
-          { label: "Add point load", action: () => handleAddPointLoad(target.x) },
-          { label: "Add distributed load", action: () => handleAddUdl(target.x) },
-          { label: "Add moment", action: () => handleAddMoment(target.x) },
+          { label: "Tekil yük ekle", action: () => handleAddPointLoad(target.x) },
+          { label: "Yayılı yük ekle", action: () => handleAddUdl(target.x) },
+          { label: "Moment ekle", action: () => handleAddMoment(target.x) },
         ];
       }
       case "support":
         return [
-          { label: "Remove support", action: () => handleRemoveSupport(target.id) },
+          { label: "Mesneti kaldır", action: () => handleRemoveSupport(target.id) },
         ];
       case "point":
         return [
-          { label: "Flip direction", action: () => togglePointDirection(target.id) },
-          { label: "Remove point load", action: () => handleRemovePointLoad(target.id) },
+          { label: "Yönü değiştir", action: () => togglePointDirection(target.id) },
+          { label: "Tekil yükü kaldır", action: () => handleRemovePointLoad(target.id) },
         ];
       case "udl":
         return [
-          { label: "Toggle direction", action: () => toggleUdlDirection(target.id) },
-          { label: "Remove distributed load", action: () => handleRemoveUdl(target.id) },
+          { label: "Yönü değiştir", action: () => toggleUdlDirection(target.id) },
+          { label: "Yayılı yükü kaldır", action: () => handleRemoveUdl(target.id) },
         ];
       case "moment":
         return [
-          { label: "Toggle direction", action: () => toggleMomentDirection(target.id) },
-          { label: "Remove moment", action: () => handleRemoveMoment(target.id) },
+          { label: "Yönü değiştir", action: () => toggleMomentDirection(target.id) },
+          { label: "Momenti kaldır", action: () => handleRemoveMoment(target.id) },
         ];
       default:
         return [];
@@ -636,8 +637,29 @@ export default function HomePage() {
         }
       }}
     >
-       <div className="mx-auto flex w-full max-w-none flex-col gap-5 px-4 pt-4 sm:px-6">
-        <section className="panel space-y-4 p-4 sm:p-5">
+      {/* Header */}
+      <header className="border-b border-slate-800/60 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900">
+        <div className="mx-auto flex w-full max-w-none items-center justify-between px-4 py-6 sm:px-6">
+          <div className="flex items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400 to-blue-500 shadow-lg">
+              <svg className="h-7 w-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+              </svg>
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-slate-100">Moment Calculator</h1>
+              <p className="text-sm text-slate-400">Statik kiriş analiz aracı</p>
+            </div>
+          </div>
+          <div className="hidden text-right sm:block">
+            <p className="text-xs text-slate-500">Created by</p>
+            <p className="text-sm font-semibold text-slate-300">Deha Özcan</p>
+          </div>
+        </div>
+      </header>
+
+      <div className="mx-auto flex w-full max-w-none flex-col gap-5 px-4 pt-4 sm:px-6">
+        <section className="panel space-y-3 p-3 sm:p-4">
           <div className="flex items-center justify-between">
             <span className="tag">Ön Ayarlar</span>
             <button
@@ -648,21 +670,20 @@ export default function HomePage() {
               Varsayılana sıfırla
             </button>
           </div>
-          <p className="text-xs text-slate-400">Bir şablondan başlayın veya özel kiriş tasarımınızı geliştirmeye devam edin.</p>
-          <div className="flex flex-col gap-3 md:flex-row md:flex-wrap">
+          <div className="flex flex-col gap-2 md:flex-row md:flex-wrap">
             {PRESETS.map((preset) => (
               <button
                 key={preset.key}
                 type="button"
                 onClick={() => applyPreset(preset)}
                 className={clsx(
-                  "flex-1 rounded-2xl border px-4 py-3 text-left transition",
+                  "flex-1 rounded-xl border px-3 py-2 text-left transition",
                   activePreset === preset.key
                     ? "border-cyan-400 bg-cyan-500/10"
                     : "border-slate-700/80 bg-slate-900/60 hover:border-cyan-400",
                 )}
               >
-                <p className="text-sm font-semibold text-slate-100">{preset.title}</p>
+                <p className="text-xs font-semibold text-slate-100">{preset.title}</p>
                 <p className="text-xs text-slate-400">{preset.description}</p>
               </button>
             ))}
@@ -729,14 +750,84 @@ export default function HomePage() {
              />
            </div>
 
-          <div className="space-y-6">
-            <ResultsPanel
-              reactions={reactions}
-              solveTimeMs={result?.meta.solve_time_ms}
-              warnings={result?.meta.validation_warnings ?? []}
-              error={error}
-            />
-            <DerivationSteps steps={result?.derivations ?? []} />
+          <div className="panel space-y-6 p-6">
+            <div>
+              <span className="tag">Çözüm</span>
+              <p className="text-sm text-slate-400">Mesnet tepkileri, denge kontrolü ve çözüm işlemleri</p>
+            </div>
+            
+            <div className="space-y-6">
+              {/* Results Section */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-slate-300">Mesnet Tepkileri</h3>
+                  {result?.meta.solve_time_ms !== undefined && (
+                    <span className="rounded-full bg-slate-800/80 px-3 py-1 text-xs text-slate-300">
+                      {result.meta.solve_time_ms.toFixed(2)} ms
+                    </span>
+                  )}
+                </div>
+                {error ? (
+                  <div className="panel-muted border border-rose-500/40 bg-rose-500/10 p-4 text-sm text-rose-200">
+                    {error}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    {reactions && reactions.length > 0 ? (
+                      reactions.map((reaction) => (
+                        <div key={reaction.support_id} className="panel-muted p-4">
+                          <p className="text-xs uppercase tracking-wide text-slate-400">
+                            R<sub>{reaction.support_id}</sub> ({reaction.support_type})
+                          </p>
+                          <p className="text-3xl font-semibold text-cyan-300">
+                            {reaction.vertical.toFixed(2)} kN
+                          </p>
+                          <p className="text-xs text-slate-500">x = {reaction.position.toFixed(2)} m</p>
+                        </div>
+                      ))
+                    ) : null}
+                    {reactions && reactions.length > 0 && (
+                      <div className="panel-muted col-span-full p-4 text-sm text-slate-300">
+                        <p className="font-medium text-slate-200">Denge kontrolü</p>
+                        <p>Tepki toplamı = {reactions.reduce((sum, r) => sum + (r.vertical ?? 0), 0).toFixed(2)} kN</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {result?.meta.validation_warnings && result.meta.validation_warnings.length > 0 && (
+                  <div className="panel-muted border border-amber-400/40 bg-amber-500/10 p-4 text-xs text-amber-100">
+                    <p className="mb-2 font-semibold">Uyarılar</p>
+                    <ul className="space-y-2">
+                      {result.meta.validation_warnings.map((warning) => (
+                        <li key={warning}>- {warning}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+
+              {/* Derivation Steps Section */}
+              {result?.derivations && result.derivations.length > 0 ? (
+                <div className="space-y-4">
+                  <h3 className="text-sm font-semibold text-slate-300">Çözüm İşlemleri</h3>
+                  <ol className="space-y-4 text-slate-100">
+                    {result.derivations.map((step, index) => (
+                      <li key={`${step}-${index}`} className="panel-muted border border-slate-800/60 p-4">
+                        <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                          Adım {index + 1}
+                        </p>
+                        <BlockMath math={step} />
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              ) : (
+                <div className="panel-muted p-6 text-sm text-slate-400">
+                  Türetme adımlarını görmek için çözücüyü çalıştırın.
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
