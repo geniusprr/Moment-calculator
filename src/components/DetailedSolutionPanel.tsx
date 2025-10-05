@@ -211,6 +211,43 @@ export function DetailedSolutionPanel({
                                 </div>
                             )}
 
+                            {/* Method Description */}
+                            <div className="panel p-6">
+                                <div className="mb-2 flex items-center gap-2">
+                                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-cyan-500/20">
+                                        <svg
+                                            className="h-5 w-5 text-cyan-400"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            viewBox="0 0 24 24"
+                                        >
+                                            <path
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                                strokeWidth={2}
+                                                d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                                            />
+                                        </svg>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <h3 className="text-lg font-semibold text-slate-100">
+                                            {activeMethod.method_title}
+                                        </h3>
+                                    </div>
+                                </div>
+                                <p className="text-slate-300">{activeMethod.description}</p>
+                                {activeMethod.recommendation_reason && (
+                                    <div className="mt-4 rounded-lg border border-cyan-500/20 bg-cyan-500/10 p-4">
+                                        <p className="text-xs font-semibold uppercase tracking-wide text-cyan-200">
+                                            Tercih sebebi
+                                        </p>
+                                        <p className="mt-1 text-sm leading-relaxed text-slate-100">
+                                            {activeMethod.recommendation_reason}
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+
                             {/* Diagram panel removed for shear and area methods as requested */}
 
                             {/* Controls */}
