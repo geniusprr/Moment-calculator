@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field, ValidationInfo, model_validator
 SupportType = Literal["pin", "roller"]
 Direction = Literal["down", "up"]
 MomentDirection = Literal["ccw", "cw"]
+DistributedLoadShape = Literal["uniform", "triangular_increasing", "triangular_decreasing"]
 
 
 class Support(BaseModel):
@@ -28,6 +29,7 @@ class UniformDistributedLoad(BaseModel):
     start: float = Field(ge=0, description="Start position in metres")
     end: float = Field(ge=0, description="End position in metres")
     direction: Direction = Field(default="down")
+    shape: DistributedLoadShape = Field(default="uniform")
 
 
 class MomentLoad(BaseModel):
@@ -68,6 +70,8 @@ class SolveRequest(BaseModel):
         for udl in self.udls:
             if not (0 <= udl.start < udl.end <= length):
                 raise ValueError("UDL start and end must be ordered within the beam span.")
+            if udl.magnitude <= 0:
+                raise ValueError("Distributed load magnitude must be positive.")
 
         for moment in self.moment_loads:
             if not 0 <= moment.position <= length:
@@ -95,9 +99,77 @@ class DiagramData(BaseModel):
     normal: List[float]
 
 
+class MethodRecommendation(BaseModel):
+    method: Literal["shear", "area"]
+    title: str
+    reason: str
+
+
 class SolveMeta(BaseModel):
     solve_time_ms: float
     validation_warnings: List[str]
+    recommendation: Optional[MethodRecommendation] = None
+
+
+class BeamSupportInfo(BaseModel):
+    id: str
+    type: SupportType
+    position: float
+
+
+class BeamPointLoadInfo(BaseModel):
+    id: str
+    magnitude: float
+    position: float
+    angle_deg: float
+
+
+class BeamDistributedLoadInfo(BaseModel):
+    id: str
+    magnitude: float
+    start: float
+    end: float
+    direction: Direction
+    shape: DistributedLoadShape
+
+
+class BeamMomentLoadInfo(BaseModel):
+    id: str
+    magnitude: float
+    position: float
+    direction: MomentDirection
+
+
+class BeamContext(BaseModel):
+    length: float
+    supports: List[BeamSupportInfo]
+    point_loads: List[BeamPointLoadInfo]
+    udls: List[BeamDistributedLoadInfo]
+    moment_loads: List[BeamMomentLoadInfo]
+
+
+class BeamSectionHighlight(BaseModel):
+    start: float
+    end: float
+    label: Optional[str] = None
+
+
+class ShearRegionSamples(BaseModel):
+    x: List[float]
+    shear: List[float]
+
+
+class MomentSegmentSamples(BaseModel):
+    x: List[float]
+    moment: List[float]
+
+
+class AreaMethodVisualization(BaseModel):
+    shape: str
+    area_value: float
+    trend: Literal["increase", "decrease", "constant"]
+    region: ShearRegionSamples
+    moment_segment: MomentSegmentSamples
 
 
 class SolutionStep(BaseModel):
@@ -107,18 +179,23 @@ class SolutionStep(BaseModel):
     general_formula: Optional[str] = None  # Genel formül (LaTeX)
     substituted_formula: Optional[str] = None  # Değerlerin yerine konulmuş hali (LaTeX)
     numerical_result: Optional[str] = None
+    beam_section: Optional[BeamSectionHighlight] = None
+    area_visualization: Optional[AreaMethodVisualization] = None
 
 
 class SolutionMethod(BaseModel):
     method_name: str
     method_title: str
     description: str
+    recommended: bool = False
+    recommendation_reason: Optional[str] = None
     steps: List[SolutionStep]
 
 
 class DetailedSolution(BaseModel):
     methods: List[SolutionMethod]
     diagram: Optional[DiagramData] = None  # Grafik verileri çözüm adımlarında gösterilmek üzere
+    beam_context: Optional[BeamContext] = None
 
 
 class SolveResponse(BaseModel):

@@ -306,7 +306,7 @@ export function BeamForm({
                     />
                   </label>
                 </div>
-                <div className="grid gap-3 sm:grid-cols-3">
+                <div className="grid gap-3">
                   <label className="space-y-1">
                     <span className={labelClass}>Başlangıç&nbsp;(m)</span>
                     <input
@@ -340,6 +340,18 @@ export function BeamForm({
                     >
                       <option value="down">Aşağı</option>
                       <option value="up">Yukarı</option>
+                    </select>
+                  </label>
+                  <label className="space-y-1">
+                    <span className={labelClass}>Profil</span>
+                    <select
+                      className={fieldClasses}
+                      value={load.shape}
+                      onChange={(event) => onUdlChange(load.id, "shape", event.target.value)}
+                    >
+                      <option value="uniform">Düzgün</option>
+                      <option value="triangular_increasing">Üçgen (0 → max)</option>
+                      <option value="triangular_decreasing">Üçgen (max → 0)</option>
                     </select>
                   </label>
                 </div>

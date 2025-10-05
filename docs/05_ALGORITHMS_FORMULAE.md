@@ -6,7 +6,10 @@
 - Uygulama: R_A + R_B = ΣP + Σ(w_i * L_i) ve R_B * L - Σ(P_j * (x_j - x_A)) - Σ(w_i * L_i * (x_i^c - x_A)) = 0
 
 ## 2. Reaksiyon Hesabı Adımları
-1. Tüm yayılı yükleri eşdeğer noktasal yüke çevir: P_eq = w * L, etki noktası x_c = start + L/2.
+1. Tüm yayılı yükleri eşdeğer noktasal yüke çevir:
+  - Düzgün yük: P_eq = w * L, etki noktası x_c = start + L/2.
+  - Üçgen (0 → max) yük: P_eq = 0.5 * w_max * L, x_c = start + 2L/3.
+  - Üçgen (max → 0) yük: P_eq = 0.5 * w_max * L, x_c = start + L/3.
 2. Noktasal yüklerin yönünü aşağı pozitif kabul ederek toplamı al.
 3. Moment denkleminden R_B değerini çöz, ardından kuvvet denkleminden R_A.
 4. Sonuçları üç ondalık basamakta yuvarla; işaret pozitif ise yukarı yön kabul edilir.
@@ -14,7 +17,9 @@
 ## 3. Kesme Kuvveti Diyagramı V(x)
 - Başlangıçta V(0) = R_A.
 - Her noktasal yük konumunda V(x) değeri yük kadar sıçrar.
-- UDL segmenti üzerinde V(x) = V(x_start) - w * (x - x_start) lineer azalır.
+- Düzgün yük segmenti üzerinde V(x) = V(x_start) - w * (x - x_start) lineer azalır.
+- Üçgen (0 → max) yük için V(x) = V(x_start) - (w_max / (2L)) * (x - start)^2.
+- Üçgen (max → 0) yük için V(x) = V(x_start) - w_max * (x - start) + (w_max / (2L)) * (x - start)^2.
 - NumPy ile uygulama: kiriş boyunca eşit aralıklı x vektörü oluştur; her yük için parça parça katkı ekle.
 
 ## 4. Eğilme Momenti Diyagramı M(x)
@@ -25,6 +30,7 @@
 ## 5. LaTeX Türetim Adımları
 - Denge denklemlerini sembolik olarak sırala ve KaTeX uyumlu string üret.
 - UDL dönüşümü için ayrı satır: w_{eq} = w * L, x_c = start + L/2.
+- Üçgen yükler için w_{eq} = 0.5 * w_{max} * L; x_c = start + 2L/3 (0 → max) veya start + L/3 (max → 0).
 - V(x) ve M(x) fonksiyonları Heaviside gösterimi ile ifade edilir (öğretici mod için):
   - V(x) = R_A - Σ P_j H(x - x_j) - Σ w_i (x - start_i) H(x - start_i) + Σ w_i (x - end_i) H(x - end_i)
   - M(x) = ∫_0^x V(s) ds

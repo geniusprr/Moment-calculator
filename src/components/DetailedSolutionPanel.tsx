@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { BlockMath } from "react-katex";
 import clsx from "clsx";
 import type { DetailedSolution } from "@/types/beam";
+import { BeamSectionDiagram } from "./BeamSectionDiagram";
+import { AreaMethodDiagram } from "./AreaMethodDiagram";
 
 interface DetailedSolutionPanelProps {
     detailedSolution: DetailedSolution;
@@ -80,6 +82,10 @@ export function DetailedSolutionPanel({
     if (!isOpen) return null;
 
     const activeMethod = detailedSolution.methods[activeMethodIndex];
+    const beamContext = detailedSolution.beam_context;
+    const recommendedMethod = detailedSolution.methods.find(
+        (method) => method.recommended && method.method_name !== "support_reactions"
+    ) ?? detailedSolution.methods.find((method) => method.recommended);
 
     return (
         <>
@@ -155,6 +161,56 @@ export function DetailedSolutionPanel({
                     {/* Content */}
                     <div className="flex-1 overflow-y-auto px-6 py-6">
                         <div className="mx-auto max-w-5xl space-y-6">
+                            {/* Recommendation Overview (only for support reactions) */}
+                            {activeMethod.method_name === "support_reactions" && (
+                                <div className="panel border border-cyan-500/20 bg-slate-900/70 p-6">
+                                    <div className="flex flex-wrap items-center justify-between gap-3">
+                                        <div>
+                                            <p className="text-xs font-semibold uppercase tracking-wide text-cyan-300">Yöntem Seçim Rehberi</p>
+                                            <p className="text-sm text-slate-300">
+                                                Hangi yöntemi ne zaman tercih edeceğinizi aşağıdaki özetten görebilirsiniz.
+                                            </p>
+                                        </div>
+                                        {recommendedMethod && (
+                                            <span className="rounded-full bg-cyan-500/20 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-cyan-200">
+                                                Önerilen: {recommendedMethod.method_title}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div className="mt-4 space-y-3">
+                                        {detailedSolution.methods
+                                            .filter((method) => method.method_name !== "support_reactions")
+                                            .map((method) => (
+                                                <div
+                                                    key={`summary-${method.method_name}`}
+                                                    className={clsx(
+                                                        "rounded-lg border px-4 py-3",
+                                                        method.recommended
+                                                            ? "border-cyan-500/40 bg-cyan-500/10"
+                                                            : "border-slate-700/60 bg-slate-800/40"
+                                                    )}
+                                                >
+                                                    <div className="flex items-start justify-between gap-3">
+                                                        <div>
+                                                            <p className="text-sm font-semibold text-slate-100">{method.method_title}</p>
+                                                            {method.recommendation_reason && (
+                                                                <p className="mt-1 text-xs leading-relaxed text-slate-300">
+                                                                    {method.recommendation_reason}
+                                                                </p>
+                                                            )}
+                                                        </div>
+                                                        {method.recommended && (
+                                                            <span className="rounded-full bg-cyan-500 px-3 py-1 text-xs font-semibold text-slate-900">
+                                                                Tavsiye edilir
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                    </div>
+                                </div>
+                            )}
+
                             {/* Method Description */}
                             <div className="panel p-6">
                                 <div className="mb-2 flex items-center gap-2">
@@ -173,48 +229,31 @@ export function DetailedSolutionPanel({
                                             />
                                         </svg>
                                     </div>
-                                    <h3 className="text-lg font-semibold text-slate-100">
-                                        {activeMethod.method_title}
-                                    </h3>
-                                </div>
-                                <p className="text-slate-300">{activeMethod.description}</p>
-                            </div>
-
-                            {/* Diagrams - Show for shear and area methods */}
-                            {detailedSolution.diagram && (activeMethod.method_name === "shear" || activeMethod.method_name === "area") && (
-                                <div className="panel p-6">
-                                    <h4 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-400">
-                                        Kesme ve Moment Grafikleri
-                                    </h4>
-                                    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                                        {/* Shear Diagram */}
-                                        <div>
-                                            <p className="mb-2 text-xs font-medium text-slate-400">Kesme Kuvveti Grafiği</p>
-                                            <div className="rounded-lg bg-slate-950/50 p-4">
-                                                <MiniDiagram
-                                                    data={detailedSolution.diagram.shear}
-                                                    xData={detailedSolution.diagram.x}
-                                                    color="#06b6d4"
-                                                    label="V (kN)"
-                                                />
-                                            </div>
-                                        </div>
-
-                                        {/* Moment Diagram */}
-                                        <div>
-                                            <p className="mb-2 text-xs font-medium text-slate-400">Eğilme Momenti Grafiği</p>
-                                            <div className="rounded-lg bg-slate-950/50 p-4">
-                                                <MiniDiagram
-                                                    data={detailedSolution.diagram.moment}
-                                                    xData={detailedSolution.diagram.x}
-                                                    color="#22c55e"
-                                                    label="M (kN·m)"
-                                                />
-                                            </div>
-                                        </div>
+                                    <div className="flex items-center gap-3">
+                                        <h3 className="text-lg font-semibold text-slate-100">
+                                            {activeMethod.method_title}
+                                        </h3>
+                                        {activeMethod.recommended && (
+                                            <span className="rounded-full bg-cyan-500 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-900">
+                                                Tavsiye edilir
+                                            </span>
+                                        )}
                                     </div>
                                 </div>
-                            )}
+                                <p className="text-slate-300">{activeMethod.description}</p>
+                                {activeMethod.recommendation_reason && (
+                                    <div className="mt-4 rounded-lg border border-cyan-500/20 bg-cyan-500/10 p-4">
+                                        <p className="text-xs font-semibold uppercase tracking-wide text-cyan-200">
+                                            Tercih sebebi
+                                        </p>
+                                        <p className="mt-1 text-sm leading-relaxed text-slate-100">
+                                            {activeMethod.recommendation_reason}
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Diagram panel removed for shear and area methods as requested */}
 
                             {/* Controls */}
                             <div className="flex justify-end gap-2">
@@ -236,6 +275,8 @@ export function DetailedSolutionPanel({
                             <div className="space-y-4">
                                 {activeMethod.steps.map((step) => {
                                     const isExpanded = expandedSteps.has(step.step_number);
+                                    const hasBeamHighlight = Boolean(step.beam_section && beamContext);
+                                    const hasAreaVisualization = Boolean(step.area_visualization && detailedSolution.diagram);
 
                                     return (
                                         <div
@@ -282,61 +323,92 @@ export function DetailedSolutionPanel({
 
                                             {/* Step Content */}
                                             {isExpanded && (
-                                                <div className="space-y-4 px-6 py-6">
-                                                    {/* Explanation */}
-                                                    <div>
-                                                        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
-                                                            Açıklama
-                                                        </p>
-                                                        <div className="rounded-lg bg-slate-800/30 border border-slate-700/50 p-4">
-                                                            <p className="whitespace-pre-line text-sm leading-relaxed text-slate-200 font-mono">
-                                                                {step.explanation}
-                                                            </p>
-                                                        </div>
-                                                    </div>
-
-                                                    {/* Formulas */}
-                                                    {(step.general_formula || step.substituted_formula) && (
-                                                        <div className="space-y-4">
-                                                            {/* General Formula */}
-                                                            {step.general_formula && (
-                                                                <div>
-                                                                    <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
-                                                                        Genel Formül
-                                                                    </p>
-                                                                    <div className="rounded-xl bg-slate-950/50 p-6 border border-cyan-500/20">
-                                                                        <BlockMath math={step.general_formula} />
-                                                                    </div>
-                                                                </div>
+                                                <div className="px-6 py-6">
+                                                    <div
+                                                        className={clsx(
+                                                            "flex flex-col gap-6",
+                                                            (hasBeamHighlight || hasAreaVisualization) && "lg:flex-row"
+                                                        )}
+                                                    >
+                                                        <div
+                                                            className={clsx(
+                                                                "space-y-4",
+                                                                (hasBeamHighlight || hasAreaVisualization) && "lg:flex-1 lg:pr-4"
                                                             )}
-
-                                                            {/* Substituted Formula */}
-                                                            {step.substituted_formula && (
-                                                                <div>
-                                                                    <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
-                                                                        Değerlerin Yerine Konulmuş Hali
-                                                                    </p>
-                                                                    <div className="rounded-xl bg-slate-950/50 p-6 border border-green-500/20">
-                                                                        <BlockMath math={step.substituted_formula} />
-                                                                    </div>
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    )}
-
-                                                    {/* Numerical Result */}
-                                                    {step.numerical_result && (
-                                                        <div>
-                                                            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
-                                                                Sonuç
-                                                            </p>
-                                                            <div className="rounded-lg bg-green-500/10 border border-green-500/30 px-4 py-3">
-                                                                <p className="text-sm font-medium text-green-300">
-                                                                    {step.numerical_result}
+                                                        >
+                                                            {/* Explanation */}
+                                                            <div>
+                                                                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                                                                    Açıklama
                                                                 </p>
+                                                                <div className="rounded-lg bg-slate-800/30 border border-slate-700/50 p-4">
+                                                                    <p className="whitespace-pre-line text-sm leading-relaxed text-slate-200 font-mono">
+                                                                        {step.explanation}
+                                                                    </p>
+                                                                </div>
                                                             </div>
+
+                                                            {/* Formulas */}
+                                                            {(step.general_formula || step.substituted_formula) && (
+                                                                <div className="space-y-4">
+                                                                    {/* General Formula */}
+                                                                    {step.general_formula && (
+                                                                        <div>
+                                                                            <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                                                                                Genel Formül
+                                                                            </p>
+                                                                            <div className="rounded-xl bg-slate-950/50 p-6 border border-cyan-500/20">
+                                                                                <BlockMath math={step.general_formula} />
+                                                                            </div>
+                                                                        </div>
+                                                                    )}
+
+                                                                    {/* Substituted Formula */}
+                                                                    {step.substituted_formula && (
+                                                                        <div>
+                                                                            <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                                                                                Değerlerin Yerine Konulmuş Hali
+                                                                            </p>
+                                                                            <div className="rounded-xl bg-slate-950/50 p-6 border border-green-500/20">
+                                                                                <BlockMath math={step.substituted_formula} />
+                                                                            </div>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            )}
+
+                                                            {/* Numerical Result */}
+                                                            {step.numerical_result && (
+                                                                <div>
+                                                                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                                                                        Sonuç
+                                                                    </p>
+                                                                    <div className="rounded-lg bg-green-500/10 border border-green-500/30 px-4 py-3">
+                                                                        <p className="text-sm font-medium text-green-300">
+                                                                            {step.numerical_result}
+                                                                        </p>
+                                                                    </div>
+                                                                </div>
+                                                            )}
                                                         </div>
-                                                    )}
+
+                                                        {step.beam_section && beamContext && (
+                                                            <div className="shrink-0 w-full lg:w-[340px]">
+                                                                <BeamSectionDiagram
+                                                                    context={beamContext}
+                                                                    highlight={step.beam_section}
+                                                                />
+                                                            </div>
+                                                        )}
+                                                        {hasAreaVisualization && detailedSolution.diagram && step.area_visualization && (
+                                                            <div className="shrink-0 w-full lg:w-[360px]">
+                                                                <AreaMethodDiagram
+                                                                    diagram={detailedSolution.diagram}
+                                                                    visualization={step.area_visualization}
+                                                                />
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             )}
                                         </div>
@@ -351,76 +423,4 @@ export function DetailedSolutionPanel({
     );
 }
 
-// Mini Diagram Component for inline visualization
-function MiniDiagram({ data, xData, color, label }: { data: number[], xData: number[], color: string, label: string }) {
-    const width = 400;
-    const height = 150;
-    const padding = 30;
-
-    // Find min/max for scaling
-    const minX = Math.min(...xData);
-    const maxX = Math.max(...xData);
-    const minY = Math.min(...data, 0);
-    const maxY = Math.max(...data, 0);
-
-    // Scale functions
-    const scaleX = (x: number) => padding + ((x - minX) / (maxX - minX)) * (width - 2 * padding);
-    const scaleY = (y: number) => {
-        const range = maxY - minY;
-        if (range === 0) return height / 2;
-        return height - padding - ((y - minY) / range) * (height - 2 * padding);
-    };
-
-    // Create path
-    const pathData = data.map((y, i) => {
-        const x = scaleX(xData[i]);
-        const yPos = scaleY(y);
-        return `${i === 0 ? 'M' : 'L'} ${x} ${yPos}`;
-    }).join(' ');
-
-    // Zero line position
-    const zeroY = scaleY(0);
-
-    return (
-        <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} className="overflow-visible">
-            {/* Grid lines */}
-            <line x1={padding} y1={zeroY} x2={width - padding} y2={zeroY} stroke="#475569" strokeWidth="1" strokeDasharray="4 2" />
-
-            {/* Axes */}
-            <line x1={padding} y1={padding} x2={padding} y2={height - padding} stroke="#64748b" strokeWidth="1.5" />
-            <line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} stroke="#64748b" strokeWidth="1.5" />
-
-            {/* Data path */}
-            <path d={pathData} fill="none" stroke={color} strokeWidth="2" />
-
-            {/* Fill area if applicable */}
-            {data.some(v => v !== 0) && (
-                <path
-                    d={`M ${scaleX(xData[0])} ${zeroY} ${pathData.replace('M', 'L')} L ${scaleX(xData[xData.length - 1])} ${zeroY} Z`}
-                    fill={color}
-                    fillOpacity="0.1"
-                />
-            )}
-
-            {/* Labels */}
-            <text x={padding} y={padding - 10} fill="#94a3b8" fontSize="10" fontFamily="monospace">
-                {label}
-            </text>
-            <text x={width - padding} y={height - 10} fill="#94a3b8" fontSize="10" textAnchor="end" fontFamily="monospace">
-                x (m)
-            </text>
-
-            {/* Min/Max values */}
-            {maxY !== 0 && (
-                <text x={padding - 5} y={scaleY(maxY) + 3} fill="#94a3b8" fontSize="9" textAnchor="end" fontFamily="monospace">
-                    {maxY.toFixed(1)}
-                </text>
-            )}
-            {minY !== 0 && (
-                <text x={padding - 5} y={scaleY(minY) + 3} fill="#94a3b8" fontSize="9" textAnchor="end" fontFamily="monospace">
-                    {minY.toFixed(1)}
-                </text>
-            )}
-        </svg>
-    );
-}
+// Diagram bileşeni kaldırıldı

@@ -7,9 +7,7 @@ import { BlockMath } from "react-katex";
 import { BeamDiagrams } from "@/components/BeamDiagrams";
 import { BeamForm } from "@/components/BeamForm";
 import { BeamSketch, SketchContextTarget } from "@/components/BeamSketch";
-import { DerivationSteps } from "@/components/DerivationSteps";
 import { DetailedSolutionPanel } from "@/components/DetailedSolutionPanel";
-import { ResultsPanel } from "@/components/ResultsPanel";
 import { solveBeam } from "@/lib/api";
 import type {
   BeamSolveRequest,
@@ -33,6 +31,14 @@ type PresetConfig = {
     momentLoads: MomentLoadInput[];
     samplingPoints: number;
   };
+};
+
+type ContextMenuItem = {
+  label: string;
+  disabled?: boolean;
+  action?: () => void;
+  tooltip?: string;
+  submenu?: ContextMenuItem[];
 };
 
 const PRESETS: PresetConfig[] = [
@@ -63,7 +69,7 @@ const PRESETS: PresetConfig[] = [
         { id: "B", type: "roller", position: 8 },
       ],
       pointLoads: [],
-      udls: [{ id: "Q1", magnitude: 4, start: 0, end: 8, direction: "down" }],
+      udls: [{ id: "Q1", magnitude: 4, start: 0, end: 8, direction: "down", shape: "uniform" }],
       momentLoads: [],
       samplingPoints: 401,
     },
@@ -79,7 +85,7 @@ const PRESETS: PresetConfig[] = [
         { id: "B", type: "roller", position: 10 },
       ],
       pointLoads: [{ id: "F1", magnitude: 15, position: 5, angleDeg: -90 }],
-      udls: [{ id: "Q1", magnitude: 5, start: 6, end: 10, direction: "down" }],
+      udls: [{ id: "Q1", magnitude: 5, start: 6, end: 10, direction: "down", shape: "uniform" }],
       momentLoads: [],
       samplingPoints: 401,
     },
@@ -89,6 +95,11 @@ const PRESETS: PresetConfig[] = [
 const DEFAULT_PRESET = PRESETS[0];
 
 const clampValue = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+
+const normalizeAngle = (angle: number) => {
+  const wrapped = ((angle % 360) + 360) % 360;
+  return wrapped > 180 ? wrapped - 360 : wrapped;
+};
 
 const cloneSupports = (items: SupportInput[]): SupportInput[] => items.map((item) => ({ ...item }));
 const clonePointLoads = (items: PointLoadInput[]): PointLoadInput[] => items.map((item) => ({ ...item }));
@@ -115,6 +126,7 @@ export default function HomePage() {
   const [contextMenu, setContextMenu] = useState<{ target: SketchContextTarget; clientX: number; clientY: number } | null>(
     null,
   );
+  const [openSubmenu, setOpenSubmenu] = useState<string | null>(null);
   const [isDetailedSolutionOpen, setIsDetailedSolutionOpen] = useState(false);
 
   useEffect(() => {
@@ -143,6 +155,10 @@ export default function HomePage() {
     return () => window.removeEventListener("keydown", handleEsc);
   }, [contextMenu]);
 
+  useEffect(() => {
+    setOpenSubmenu(null);
+  }, [contextMenu]);
+
   const sanitizedSupports = useMemo(
     () =>
       supports
@@ -161,7 +177,7 @@ export default function HomePage() {
           id: load.id.toUpperCase(),
           magnitude: Number(load.magnitude),
           position: Number(load.position),
-          angleDeg: Number(load.angleDeg),
+          angleDeg: normalizeAngle(Number(load.angleDeg)),
         })),
     [pointLoads],
   );
@@ -177,6 +193,7 @@ export default function HomePage() {
           start: Number(load.start),
           end: Number(load.end),
           direction: load.direction,
+          shape: load.shape,
         })),
     [udls],
   );
@@ -227,6 +244,7 @@ export default function HomePage() {
         start: load.start,
         end: load.end,
         direction: load.direction,
+        shape: load.shape,
       })),
       moment_loads: sanitizedMoments.map((moment) => ({
         id: moment.id,
@@ -324,7 +342,7 @@ export default function HomePage() {
             return { ...load, id: String(value).toUpperCase() };
           }
           if (field === "angleDeg") {
-            return { ...load, angleDeg: Number(value) };
+            return { ...load, angleDeg: normalizeAngle(Number(value)) };
           }
           if (field === "magnitude" || field === "position") {
             return { ...load, [field]: Number(value) };
@@ -350,6 +368,9 @@ export default function HomePage() {
           }
           if (field === "direction") {
             return { ...load, direction: value as UdlInput["direction"] };
+          }
+          if (field === "shape") {
+            return { ...load, shape: value as UdlInput["shape"] };
           }
           return { ...load, [field]: Number(value) };
         }),
@@ -444,10 +465,13 @@ export default function HomePage() {
         }
         const nextPosition = position !== undefined ? clampValue(position, 0, length) : current.length === 0 ? 0 : length;
         const type: SupportInput["type"] = current.length === 0 ? "pin" : "roller";
+        const usedIds = new Set(current.map((support) => support.id.toUpperCase()));
+        const preferredIds = ["A", "B"] as const;
+        const nextId = preferredIds.find((candidate) => !usedIds.has(candidate)) ?? createRandomId();
         return [
           ...current,
           {
-            id: createRandomId(),
+            id: nextId,
             type,
             position: nextPosition,
           },
@@ -488,24 +512,58 @@ export default function HomePage() {
     setPointLoads((current) => current.filter((load) => load.id !== id));
   }, [clearPresetSelection]);
 
-  const togglePointDirection = useCallback((id: string) => {
+  const rotatePointAngle = useCallback((id: string, delta: number) => {
     clearPresetSelection();
     setPointLoads((current) =>
       current.map((load) =>
         load.id === id
           ? {
-              ...load,
-              angleDeg: ((load.angleDeg + 180) % 360) - 180,
-            }
+            ...load,
+            angleDeg: normalizeAngle(load.angleDeg + delta),
+          }
           : load,
       ),
     );
   }, [clearPresetSelection]);
 
+  const setPointAngle = useCallback((id: string, nextAngle: number) => {
+    clearPresetSelection();
+    setPointLoads((current) =>
+      current.map((load) => (load.id === id ? { ...load, angleDeg: normalizeAngle(nextAngle) } : load)),
+    );
+  }, [clearPresetSelection]);
+
+  const promptPointAngle = useCallback((id: string) => {
+    const current = pointLoads.find((load) => load.id === id)?.angleDeg ?? 0;
+    const input = window.prompt("Yük açısını (°) girin", current.toString());
+    if (input === null) {
+      return;
+    }
+    const normalizedInput = input.replace(",", ".");
+    const value = Number(normalizedInput.trim());
+    if (!Number.isFinite(value)) {
+      window.alert("Geçersiz açı değeri.");
+      return;
+    }
+    setPointAngle(id, value);
+  }, [pointLoads, setPointAngle]);
+
   const handleAddUdl = useCallback(
     (center?: number) => {
       clearPresetSelection();
       setUdls((current) => {
+        const usedNumbers = new Set(
+          current
+            .map((item) => {
+              const match = item.id.match(/^Q(\d+)$/i);
+              return match ? Number.parseInt(match[1], 10) : null;
+            })
+            .filter((value): value is number => value !== null),
+        );
+        let nextIndex = 1;
+        while (usedNumbers.has(nextIndex)) {
+          nextIndex += 1;
+        }
         const span = Math.min(Math.max(length * 0.3, 0.5), length);
         // Varsayılan ekleme: kirişin tam ortasına yerleştir
         const mid = clampValue(center ?? length / 2, 0, length);
@@ -514,11 +572,12 @@ export default function HomePage() {
         return [
           ...current,
           {
-            id: createRandomId(),
+            id: `Q${nextIndex}`,
             magnitude: 3,
             start,
             end,
             direction: "down",
+            shape: "uniform",
           },
         ];
       });
@@ -539,6 +598,13 @@ export default function HomePage() {
           ? { ...load, direction: load.direction === "down" ? "up" : "down" }
           : load,
       ),
+    );
+  }, [clearPresetSelection]);
+
+  const setUdlShape = useCallback((id: string, shape: UdlInput["shape"]) => {
+    clearPresetSelection();
+    setUdls((current) =>
+      current.map((load) => (load.id === id ? { ...load, shape } : load)),
     );
   }, [clearPresetSelection]);
 
@@ -577,19 +643,24 @@ export default function HomePage() {
   const diagramData = result?.diagram ?? { x: [], shear: [], moment: [], normal: [] };
   const reactions: SupportReaction[] | undefined = result?.reactions;
 
-  const closeContextMenu = useCallback(() => setContextMenu(null), []);
+  const closeContextMenu = useCallback(() => {
+    setOpenSubmenu(null);
+    setContextMenu(null);
+  }, []);
 
   const handleContextMenuSelection = useCallback(
-    (action: () => void) => {
-      action();
+    (action?: () => void) => {
+      if (action) {
+        action();
+      }
       closeContextMenu();
     },
     [closeContextMenu],
   );
 
-  const contextMenuItems = useMemo(() => {
+  const contextMenuItems = useMemo<ContextMenuItem[]>(() => {
     if (!contextMenu) {
-      return [] as Array<{ label: string; disabled?: boolean; action: () => void }>;
+      return [];
     }
     const { target } = contextMenu;
     switch (target.kind) {
@@ -610,16 +681,86 @@ export default function HomePage() {
         return [
           { label: "Mesneti kaldır", action: () => handleRemoveSupport(target.id) },
         ];
-      case "point":
+      case "point": {
+        const rotationItems: ContextMenuItem[] = [
+          {
+            label: "Sağ",
+            action: () => setPointAngle(target.id, 0),
+            tooltip: "Açı değerini 0° yapar.",
+          },
+          {
+            label: "Sol",
+            action: () => setPointAngle(target.id, 180),
+            tooltip: "Açı değerini 180° yapar.",
+          },
+          {
+            label: "Alt",
+            action: () => setPointAngle(target.id, -90),
+            tooltip: "Açı değerini -90° yapar.",
+          },
+          {
+            label: "Üst",
+            action: () => setPointAngle(target.id, 90),
+            tooltip: "Açı değerini 90° yapar.",
+          },
+          {
+            label: "Sağa 45°",
+            action: () => rotatePointAngle(target.id, 45),
+            tooltip: "Açı değerini +45° döndürür.",
+          },
+          {
+            label: "Sola 45°",
+            action: () => rotatePointAngle(target.id, -45),
+            tooltip: "Açı değerini -45° döndürür.",
+          },
+          {
+            label: "Özel değer gir...",
+            action: () => promptPointAngle(target.id),
+            tooltip: "İstediğiniz derece değerini tanımlayın.",
+          },
+        ];
         return [
-          { label: "Yönü değiştir", action: () => togglePointDirection(target.id) },
+          {
+            label: "Döndür",
+            tooltip: "Yük yönünü ayarlayın veya döndürün.",
+            submenu: rotationItems,
+          },
           { label: "Tekil yükü kaldır", action: () => handleRemovePointLoad(target.id) },
         ];
-      case "udl":
+      }
+      case "udl": {
+        const current = udls.find((item) => item.id === target.id);
+        const shapeItems: ContextMenuItem[] = [
+          {
+            label: current?.shape === "uniform" ? "Düzgün (varsayılan)" : "Düzgün",
+            disabled: current?.shape === "uniform",
+            action: () => setUdlShape(target.id, "uniform"),
+            tooltip: "Yoğunluk sabit kalır.",
+          },
+          {
+            label: current?.shape === "triangular_increasing" ? "Üçgen: 0 → max" : "Üçgen (0 → max)",
+            disabled: current?.shape === "triangular_increasing",
+            action: () => setUdlShape(target.id, "triangular_increasing"),
+            tooltip: "Başlangıçta sıfır, bitişte maksimum yoğunluk.",
+          },
+          {
+            label: current?.shape === "triangular_decreasing" ? "Üçgen: max → 0" : "Üçgen (max → 0)",
+            disabled: current?.shape === "triangular_decreasing",
+            action: () => setUdlShape(target.id, "triangular_decreasing"),
+            tooltip: "Başlangıçta maksimum, bitişte sıfır yoğunluk.",
+          },
+        ];
+
         return [
+          {
+            label: "Profil",
+            tooltip: "Yayılı yükün dağılım biçimini seçin.",
+            submenu: shapeItems,
+          },
           { label: "Yönü değiştir", action: () => toggleUdlDirection(target.id) },
           { label: "Yayılı yükü kaldır", action: () => handleRemoveUdl(target.id) },
         ];
+      }
       case "moment":
         return [
           { label: "Yönü değiştir", action: () => toggleMomentDirection(target.id) },
@@ -628,7 +769,7 @@ export default function HomePage() {
       default:
         return [];
     }
-  }, [contextMenu, handleAddMoment, handleAddPointLoad, handleAddSupport, handleAddUdl, handleRemoveMoment, handleRemovePointLoad, handleRemoveSupport, handleRemoveUdl, supports.length, toggleMomentDirection, togglePointDirection, toggleUdlDirection]);
+  }, [contextMenu, handleAddMoment, handleAddPointLoad, handleAddSupport, handleAddUdl, handleRemoveMoment, handleRemovePointLoad, handleRemoveSupport, handleRemoveUdl, promptPointAngle, rotatePointAngle, setPointAngle, setUdlShape, supports.length, toggleMomentDirection, toggleUdlDirection, udls]);
 
   return (
     <main
@@ -692,9 +833,9 @@ export default function HomePage() {
           </div>
         </section>
 
-         {/* BeamSketch moved into center column to sit between model and results */}
+        {/* BeamSketch moved into center column to sit between model and results */}
 
-         <div className="grid gap-6 xl:grid-cols-[380px_minmax(0,1fr)_380px]">
+        <div className="grid gap-6 xl:grid-cols-[380px_minmax(0,1fr)_380px]">
           <div className="space-y-6">
             <BeamForm
               length={length}
@@ -729,36 +870,44 @@ export default function HomePage() {
             />
           </div>
 
-           <div className="space-y-6">
-             <BeamSketch
-               length={length}
-               supports={sanitizedSupports}
-               pointLoads={sanitizedPointLoads}
-               udls={sanitizedUdls}
-               momentLoads={sanitizedMoments}
-               reactions={reactions}
-               onSupportPositionChange={handleSupportPositionDrag}
-               onPointLoadPositionChange={handlePointLoadPositionDrag}
-               onUdlRangeChange={handleUdlRangeDrag}
-               onMomentPositionChange={handleMomentPositionDrag}
-               onOpenContextMenu={(target, clientX, clientY) => setContextMenu({ target, clientX, clientY })}
-             />
-             <BeamDiagrams
-               x={diagramData.x}
-               shear={diagramData.shear}
-               moment={diagramData.moment}
-               normal={diagramData.normal}
-               loading={isPending}
-             />
-           </div>
+          <div className="space-y-6">
+            <BeamSketch
+              length={length}
+              supports={sanitizedSupports}
+              pointLoads={sanitizedPointLoads}
+              udls={sanitizedUdls}
+              momentLoads={sanitizedMoments}
+              reactions={reactions}
+              onSupportPositionChange={handleSupportPositionDrag}
+              onPointLoadPositionChange={handlePointLoadPositionDrag}
+              onUdlRangeChange={handleUdlRangeDrag}
+              onMomentPositionChange={handleMomentPositionDrag}
+              onOpenContextMenu={(target, clientX, clientY) => setContextMenu({ target, clientX, clientY })}
+            />
+            <BeamDiagrams
+              x={diagramData.x}
+              shear={diagramData.shear}
+              moment={diagramData.moment}
+              normal={diagramData.normal}
+              loading={isPending}
+            />
+          </div>
 
           <div className="panel space-y-6 p-6">
             <div>
               <span className="tag">Çözüm</span>
               <p className="text-sm text-slate-400">Mesnet tepkileri, denge kontrolü ve çözüm işlemleri</p>
             </div>
-            
+
             <div className="space-y-6">
+              {result?.meta.recommendation && (
+                <div className="panel-muted border border-cyan-500/30 bg-cyan-500/10 p-4 text-sm text-cyan-100">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-cyan-200/90">Tavsiye edilen yöntem</p>
+                  <p className="mt-1 text-base font-semibold text-cyan-100">{result.meta.recommendation.title}</p>
+                  <p className="mt-2 text-xs leading-relaxed text-cyan-100/90">{result.meta.recommendation.reason}</p>
+                  <p className="mt-3 text-[11px] text-cyan-200/70">Mesnet reaksiyonlarından sonra bu yöntemle devam edin.</p>
+                </div>
+              )}
               {/* Results Section */}
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
@@ -863,22 +1012,82 @@ export default function HomePage() {
           style={{ top: contextMenu.clientY, left: contextMenu.clientX }}
           onClick={(event) => event.stopPropagation()}
         >
-          {contextMenuItems.map((item) => (
-            <button
-              key={item.label}
-              type="button"
-              disabled={item.disabled}
-              onClick={() => handleContextMenuSelection(item.action)}
-              className={clsx(
-                "flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left transition",
-                item.disabled
-                  ? "cursor-not-allowed text-slate-500"
-                  : "hover:bg-slate-800 hover:text-white",
-              )}
-            >
-              {item.label}
-            </button>
-          ))}
+          {contextMenuItems.map((item) => {
+            const hasSubmenu = Array.isArray(item.submenu) && item.submenu.length > 0;
+            if (hasSubmenu) {
+              const isOpen = openSubmenu === item.label;
+              return (
+                <div key={item.label} className="relative">
+                  <button
+                    type="button"
+                    disabled={item.disabled}
+                    onClick={() => {
+                      if (item.disabled) {
+                        return;
+                      }
+                      setOpenSubmenu(isOpen ? null : item.label);
+                    }}
+                    onMouseEnter={() => {
+                      if (!item.disabled) {
+                        setOpenSubmenu(item.label);
+                      }
+                    }}
+                    title={item.tooltip}
+                    className={clsx(
+                      "flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left transition",
+                      item.disabled
+                        ? "cursor-not-allowed text-slate-500"
+                        : "hover:bg-slate-800 hover:text-white",
+                    )}
+                  >
+                    <span>{item.label}</span>
+                    <span className="ml-auto text-xs text-slate-500">›</span>
+                  </button>
+                  {isOpen && (
+                    <div
+                      className="absolute top-0 left-full ml-1 min-w-[180px] rounded-xl border border-slate-700/80 bg-slate-900/95 p-1 shadow-lg"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      {item.submenu!.map((subItem) => (
+                        <button
+                          key={subItem.label}
+                          type="button"
+                          disabled={subItem.disabled}
+                          onClick={() => handleContextMenuSelection(subItem.action)}
+                          title={subItem.tooltip}
+                          className={clsx(
+                            "flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left transition",
+                            subItem.disabled
+                              ? "cursor-not-allowed text-slate-500"
+                              : "hover:bg-slate-800 hover:text-white",
+                          )}
+                        >
+                          {subItem.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+            return (
+              <button
+                key={item.label}
+                type="button"
+                disabled={item.disabled}
+                onClick={() => handleContextMenuSelection(item.action)}
+                title={item.tooltip}
+                className={clsx(
+                  "flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left transition",
+                  item.disabled
+                    ? "cursor-not-allowed text-slate-500"
+                    : "hover:bg-slate-800 hover:text-white",
+                )}
+              >
+                {item.label}
+              </button>
+            );
+          })}
           {contextMenuItems.length === 0 && (
             <div className="px-3 py-1.5 text-xs text-slate-500">No actions available</div>
           )}

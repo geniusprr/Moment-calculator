@@ -7,8 +7,18 @@ from typing import List
 import numpy as np
 
 from beam_solver_backend.schemas.beam import (
+    AreaMethodVisualization,
+    MomentSegmentSamples,
+    ShearRegionSamples,
+    BeamContext,
+    BeamDistributedLoadInfo,
+    BeamMomentLoadInfo,
+    BeamPointLoadInfo,
+    BeamSectionHighlight,
+    BeamSupportInfo,
     DetailedSolution,
     DiagramData,
+    MethodRecommendation,
     MomentDirection,
     SolutionMethod,
     SolutionStep,
@@ -39,8 +49,74 @@ def _axial_component(load) -> float:
     return axial
 
 
-def _udl_intensity(udl) -> float:
-    return udl.magnitude if udl.direction == "down" else -udl.magnitude
+def _udl_sign(udl) -> float:
+    return 1.0 if udl.direction == "down" else -1.0
+
+
+def _udl_equivalent_force_and_centroid(udl) -> tuple[float, float]:
+    span = udl.end - udl.start
+    if span <= 0:
+        raise ValueError("Distributed load span must be positive.")
+
+    sign = _udl_sign(udl)
+
+    if udl.shape == "uniform":
+        equivalent_force = sign * udl.magnitude * span
+        centroid = udl.start + span / 2.0
+    elif udl.shape == "triangular_increasing":
+        equivalent_force = sign * 0.5 * udl.magnitude * span
+        centroid = udl.start + (2.0 * span) / 3.0
+    elif udl.shape == "triangular_decreasing":
+        equivalent_force = sign * 0.5 * udl.magnitude * span
+        centroid = udl.start + span / 3.0
+    else:  # pragma: no cover - safety for future shapes
+        raise ValueError(f"Unsupported distributed load shape: {udl.shape}")
+
+    return equivalent_force, centroid
+
+
+def _udl_shear_contribution(udl, x_axis: np.ndarray) -> np.ndarray:
+    span = udl.end - udl.start
+    if span <= 0:
+        return np.zeros_like(x_axis, dtype=float)
+
+    xi = np.clip(x_axis - udl.start, 0.0, span)
+    sign = _udl_sign(udl)
+
+    if udl.shape == "uniform":
+        return sign * udl.magnitude * xi
+    if udl.shape == "triangular_increasing":
+        return sign * (udl.magnitude * xi**2) / (2.0 * span)
+    if udl.shape == "triangular_decreasing":
+        return sign * (udl.magnitude * (xi - (xi**2) / (2.0 * span)))
+
+    raise ValueError(f"Unsupported distributed load shape: {udl.shape}")
+
+
+def _determine_method_recommendation(payload: SolveRequest) -> MethodRecommendation:
+    has_distributed = len(payload.udls) > 0
+    has_moments = len(payload.moment_loads) > 0
+    has_axial_point = any(abs(_axial_component(load)) > 1e-6 for load in payload.point_loads)
+    has_point_loads = len(payload.point_loads) > 0
+
+    if has_point_loads and not has_distributed and not has_moments and not has_axial_point:
+        return MethodRecommendation(
+            method="area",
+            title="Alan Yöntemi",
+            reason=(
+                "Sadece dikey tekil yükler bulunduğundan kesme diyagramı parça parça sabit kalır ve moment "
+                "doğrusal segmentlerden oluşur; alan yöntemi bu durumda doğrudan ve hızlıdır."
+            ),
+        )
+
+    return MethodRecommendation(
+        method="shear",
+        title="Kesme Yöntemi",
+        reason=(
+            "Yayılı veya üçgen yükler, açılı kuvvetler ya da mesnet momentleri bulunduğundan moment diyagramı parabolik/"
+            "karmaşık davranır; kesme yöntemi bu tür durumlarda daha pratik ve hatasız ilerler."
+        ),
+    )
 
 
 def _moment_sign(direction: MomentDirection) -> float:
@@ -67,10 +143,7 @@ def _compute_reactions(payload: SolveRequest) -> tuple[List[SupportReaction], Li
         total_moment_about_a += vertical * lever_arm
 
     for udl in payload.udls:
-        intensity = _udl_intensity(udl)
-        span_length = udl.end - udl.start
-        equivalent_force = intensity * span_length
-        centroid = udl.start + span_length / 2.0
+        equivalent_force, centroid = _udl_equivalent_force_and_centroid(udl)
         total_vertical += equivalent_force
         total_moment_about_a += equivalent_force * (centroid - support_a.position)
 
@@ -125,10 +198,7 @@ def _shear_diagram(payload: SolveRequest, x_axis: np.ndarray, reactions: List[Su
         shear -= vertical * (x_axis >= load.position)
 
     for udl in payload.udls:
-        intensity = _udl_intensity(udl)
-        span = udl.end - udl.start
-        contribution = np.clip(x_axis - udl.start, 0.0, span)
-        shear -= intensity * contribution
+        shear -= _udl_shear_contribution(udl, x_axis)
 
     return shear
 
@@ -212,22 +282,33 @@ def _generate_equilibrium_method(
 
     # Analyze distributed loads
     for udl in payload.udls:
-        intensity = _udl_intensity(udl)
         span_length = udl.end - udl.start
-        equivalent_force = intensity * span_length
-        centroid = udl.start + span_length / 2.0
+        equivalent_force, centroid = _udl_equivalent_force_and_centroid(udl)
         total_vertical += equivalent_force
-        
-        direction_text = "aşağı" if intensity > 0 else "yukarı"
-        
+
+        direction_text = "aşağı" if udl.direction == "down" else "yukarı"
+        shape_description = {
+            "uniform": "Düzgün yayılı",
+            "triangular_increasing": "Üçgen (başta 0 → sonda maksimum)",
+            "triangular_decreasing": "Üçgen (başta maksimum → sonda 0)",
+        }[udl.shape]
+
         load_descriptions.append(
-            f"• {udl.id}: Yoğunluk = {abs(intensity):.2f} kN/m ({direction_text})\n"
+            f"• {udl.id}: {shape_description} yük\n"
+            f"  Maksimum yoğunluk: {udl.magnitude:.2f} kN/m ({direction_text})\n"
             f"  Aralık: [{udl.start:.2f}, {udl.end:.2f}] m (uzunluk: {span_length:.2f} m)\n"
             f"  Eşdeğer kuvvet: {abs(equivalent_force):.2f} kN\n"
             f"  Ağırlık merkezi: x = {centroid:.2f} m"
         )
-        
-        latex_terms.append(f"w_{{{udl.id}}} \\times L = {abs(intensity):.3f} \\times {span_length:.3f}")
+
+        if udl.shape == "uniform":
+            latex_terms.append(
+                f"w_{{{udl.id}}} \\times L = {udl.magnitude:.3f} \\times {span_length:.3f}"
+            )
+        else:
+            latex_terms.append(
+                f"\\tfrac{{1}}{{2}} w_{{\max,{udl.id}}} \\times L = 0.5 \\times {udl.magnitude:.3f} \\times {span_length:.3f}"
+            )
 
     # Analyze moment loads
     for moment_load in payload.moment_loads:
@@ -291,14 +372,13 @@ def _generate_equilibrium_method(
         moment_parts.append(f"• {load.id}: {abs(vertical):.2f} kN × {lever_arm:.2f} m = {abs(moment_contribution):.2f} kN·m")
 
     for udl in payload.udls:
-        intensity = _udl_intensity(udl)
-        span_length = udl.end - udl.start
-        equivalent_force = intensity * span_length
-        centroid = udl.start + span_length / 2.0
+        equivalent_force, centroid = _udl_equivalent_force_and_centroid(udl)
         lever_arm = centroid - support_a.position
         moment_contribution = equivalent_force * lever_arm
         total_moment_about_a += moment_contribution
-        moment_parts.append(f"• {udl.id}: {abs(equivalent_force):.2f} kN × {lever_arm:.2f} m = {abs(moment_contribution):.2f} kN·m")
+        moment_parts.append(
+            f"• {udl.id}: {abs(equivalent_force):.2f} kN × {lever_arm:.2f} m = {abs(moment_contribution):.2f} kN·m"
+        )
 
     for moment_load in payload.moment_loads:
         signed_moment = moment_load.magnitude * _moment_sign(moment_load.direction)
@@ -375,7 +455,9 @@ def _generate_equilibrium_method(
         f"   R_{support_b.id} × mesafe = {reaction_b:.2f} × {span:.2f} = {reaction_b * span:.2f} kN·m\n"
         f"   Yüklerin momenti = {total_moment_about_a:.2f} kN·m\n"
         f"   Fark = {abs(reaction_b * span - total_moment_about_a):.4f} ≈ 0 ✓\n\n"
-        "Her iki denge de sağlanıyor, çözüm doğru!"
+        "Her iki denge de sağlanıyor, çözüm doğru!\n\n"
+        "Not: Reaksiyonların güvenilir şekilde hesaplanması için bu yöntem idealdir."
+        " Pratik moment ve kesit hesapları için Kesme yöntemi (tavsiye edilir) ile devam edebilirsiniz."
     )
     
     steps.append(
@@ -388,14 +470,16 @@ def _generate_equilibrium_method(
                 rf"{reaction_a:.2f} + {reaction_b:.2f} = {sum_forces:.2f} \approx {total_vertical:.2f}\text{{ kN}} \quad \checkmark \\"
                 rf"{reaction_b:.2f} \times {span:.2f} = {reaction_b * span:.2f} \approx {total_moment_about_a:.2f}\text{{ kN}}\cdot\text{{m}} \quad \checkmark"
             ),
-            numerical_result="✓ Tüm denge koşulları sağlanıyor, çözüm doğru!",
+            numerical_result="✓ Tüm denge koşulları sağlanıyor, çözüm doğru! (Sonraki adım için Kesme yöntemine geçmeniz önerilir)",
         )
     )
 
     return SolutionMethod(
-        method_name="equilibrium",
-        method_title="Denge Yöntemi",
-        description="Statik denge denklemleri (ΣF=0, ΣM=0) kullanılarak mesnet reaksiyonları hesaplanır.",
+        method_name="support_reactions",
+        method_title="Mesnet Reaksiyonları Hesabı",
+        description="Statik denge denklemleri (ΣF=0, ΣM=0) ile mesnet tepkileri bulunur; diğer yöntemler için başlangıç verisini sağlar.",
+        recommended=True,
+        recommendation_reason="Reaksiyon kuvvetleri tüm yöntemlerin temel girdisi olduğundan hesaplamaya her zaman bu adımla başlanmalıdır.",
         steps=steps,
     )
 
@@ -511,6 +595,11 @@ def _generate_integration_method(
                 general_formula=r"\Delta M = V_{\text{ort}} \times \Delta x, \quad M_{\text{yeni}} = M_{\text{eski}} + \Delta M",
                 substituted_formula=rf"{moment_change:.2f} = {v_avg:.2f} \times {length:.2f}, \quad {next_moment:.2f} = {current_moment:.2f} + {moment_change:.2f}",
                 numerical_result=f"M({x_end:.2f} m) = {next_moment:.2f} kN·m",
+                beam_section=BeamSectionHighlight(
+                    start=_format_float(min(x_start, x_end)),
+                    end=_format_float(max(x_start, x_end)),
+                    label=f"Bölge {i+1}"
+                ),
             )
         )
         
@@ -553,6 +642,11 @@ def _generate_integration_method(
             general_formula=r"M_{\max} = \max\{M(x) : x \in [0, L]\}",
             substituted_formula=rf"M_{{\max}} = {max_moment_value:.2f}\text{{ kN}}\cdot\text{{m}} \quad (x = {max_moment_x:.2f}\text{{ m}})",
             numerical_result=f"✓ M_max = {max_moment_value:.2f} kN·m",
+                beam_section=BeamSectionHighlight(
+                    start=_format_float(max_moment_x),
+                    end=_format_float(max_moment_x),
+                    label="Maksimum Moment"
+                ),
         )
     )
     step_num += 1
@@ -572,6 +666,11 @@ def _generate_integration_method(
             general_formula=rf"M(L) = 0",
             substituted_formula=rf"M({payload.length:.2f}) \approx {end_moment:.4f} \approx 0",
             numerical_result="✓ Sınır koşulu sağlanıyor",
+                beam_section=BeamSectionHighlight(
+                    start=0.0,
+                    end=_format_float(payload.length),
+                    label="Global Kontrol"
+                ),
         )
     )
 
@@ -579,6 +678,7 @@ def _generate_integration_method(
         method_name="shear",
         method_title="Kesme Yöntemi",
         description="Kesme kuvveti grafiği bölgelere ayrılır. Her bölgede: Moment Değişimi = Kesme × Mesafe formülü kullanılır. Basit ve pratik bir yöntemdir.",
+        recommendation_reason="Kesme diyagramındaki değerlerle momenti hızlı ve doğrudan hesapladığı için günlük mühendislik hesaplarında pratik bir yaklaşımdır.",
         steps=steps,
     )
 
@@ -715,6 +815,45 @@ def _generate_area_method(
             f"M({x_end:.2f}) = {next_moment:.2f} kN·m"
         )
         
+        # Build visualization samples
+        region_mask = (x_axis >= x_start - 1e-9) & (x_axis <= x_end + 1e-9)
+        region_x = x_axis[region_mask]
+        region_v = shear[region_mask]
+
+        start_missing = region_x.size == 0 or abs(region_x[0] - x_start) > 1e-9
+        end_missing = region_x.size == 0 or abs(region_x[-1] - x_end) > 1e-9
+
+        if start_missing:
+            start_shear = float(np.interp(x_start, x_axis, shear))
+            region_x = np.insert(region_x, 0, x_start)
+            region_v = np.insert(region_v, 0, start_shear)
+        if end_missing:
+            end_shear = float(np.interp(x_end, x_axis, shear))
+            region_x = np.append(region_x, x_end)
+            region_v = np.append(region_v, end_shear)
+
+        moment_segment_vals = moment[region_mask]
+        if start_missing:
+            moment_segment_vals = np.insert(moment_segment_vals, 0, float(np.interp(x_start, x_axis, moment)))
+        if end_missing:
+            moment_segment_vals = np.append(moment_segment_vals, float(np.interp(x_end, x_axis, moment)))
+
+        region_samples = ShearRegionSamples(
+            x=[_format_float(val) for val in region_x.tolist()],
+            shear=[_format_float(val) for val in region_v.tolist()],
+        )
+        moment_samples = MomentSegmentSamples(
+            x=[_format_float(val) for val in region_x.tolist()],
+            moment=[_format_float(val) for val in moment_segment_vals.tolist()],
+        )
+
+        if area > 1e-6:
+            trend_label = "increase"
+        elif area < -1e-6:
+            trend_label = "decrease"
+        else:
+            trend_label = "constant"
+
         steps.append(
             SolutionStep(
                 step_number=step_num,
@@ -723,6 +862,13 @@ def _generate_area_method(
                 general_formula=r"\text{Alan}_{\text{geometrik}} = f(\text{şekil}), \quad \Delta M = \text{Alan}",
                 substituted_formula=rf"\text{{Alan}} = {area:.2f}\text{{ kN}}\cdot\text{{m}}, \quad M({x_end:.2f}) = {next_moment:.2f}\text{{ kN}}\cdot\text{{m}}",
                 numerical_result=f"Bölge {i+1}: Alan = {area:.2f} kN·m, Moment = {next_moment:.2f} kN·m",
+                area_visualization=AreaMethodVisualization(
+                    shape=shape_type,
+                    area_value=_format_float(area),
+                    trend=trend_label,
+                    region=region_samples,
+                    moment_segment=moment_samples,
+                ),
             )
         )
         
@@ -835,6 +981,7 @@ def _generate_area_method(
         method_name="area",
         method_title="Alan Yöntemi (Grafik Tabanlı)",
         description="Kesme kuvveti GRAFİĞİ altındaki alanlar (dikdörtgen, üçgen, yamuk) hesaplanarak moment diyagramı çizilir. Görsel ve sezgisel bir yöntemdir.",
+        recommendation_reason="Kesme ve moment diyagramlarını görsel olarak açıklığa kavuşturmak ve eğitim/raporlama aşamalarında sezgisel doğrulama yapmak için idealdir.",
         steps=steps,
     )
 
@@ -845,6 +992,7 @@ def _generate_detailed_solutions(
     shear: np.ndarray,
     moment: np.ndarray,
     x_axis: np.ndarray,
+    recommendation: MethodRecommendation,
 ) -> DetailedSolution:
     """Generate all detailed solution methods."""
     from ..schemas.beam import DiagramData
@@ -854,6 +1002,14 @@ def _generate_detailed_solutions(
         _generate_integration_method(payload, reactions, shear, moment, x_axis),
         _generate_area_method(payload, shear, moment, x_axis),
     ]
+
+    for method in methods:
+        if method.method_name == recommendation.method:
+            method.recommended = True
+            method.recommendation_reason = recommendation.reason
+        elif method.method_name in {"shear", "area"}:
+            method.recommended = False
+            method.recommendation_reason = None
     
     # Include diagram data for visualization in solution steps
     diagram_data = DiagramData(
@@ -862,8 +1018,49 @@ def _generate_detailed_solutions(
         moment=moment.tolist(),
         normal=np.zeros_like(x_axis).tolist(),  # Placeholder for now
     )
-    
-    return DetailedSolution(methods=methods, diagram=diagram_data)
+
+    beam_context = BeamContext(
+        length=_format_float(payload.length),
+        supports=[
+            BeamSupportInfo(
+                id=support.id,
+                type=support.type,
+                position=_format_float(support.position),
+            )
+            for support in sorted(payload.supports, key=lambda item: item.position)
+        ],
+        point_loads=[
+            BeamPointLoadInfo(
+                id=load.id,
+                magnitude=_format_float(load.magnitude),
+                position=_format_float(load.position),
+                angle_deg=_format_float(load.angle_deg),
+            )
+            for load in payload.point_loads
+        ],
+        udls=[
+            BeamDistributedLoadInfo(
+                id=udl.id,
+                magnitude=_format_float(udl.magnitude),
+                start=_format_float(udl.start),
+                end=_format_float(udl.end),
+                direction=udl.direction,
+                shape=udl.shape,
+            )
+            for udl in payload.udls
+        ],
+        moment_loads=[
+            BeamMomentLoadInfo(
+                id=moment_load.id,
+                magnitude=_format_float(moment_load.magnitude),
+                position=_format_float(moment_load.position),
+                direction=moment_load.direction,
+            )
+            for moment_load in payload.moment_loads
+        ],
+    )
+
+    return DetailedSolution(methods=methods, diagram=diagram_data, beam_context=beam_context)
 
 
 def solve_beam(payload: SolveRequest) -> SolveResponse:
@@ -871,6 +1068,7 @@ def solve_beam(payload: SolveRequest) -> SolveResponse:
 
     start_time = perf_counter()
     reactions, derivations = _compute_reactions(payload)
+    recommendation = _determine_method_recommendation(payload)
 
     x_axis = np.linspace(0.0, payload.length, num=sampling_points, dtype=float)
     shear = _shear_diagram(payload, x_axis, reactions)
@@ -897,7 +1095,7 @@ def solve_beam(payload: SolveRequest) -> SolveResponse:
     duration_ms = (perf_counter() - start_time) * 1000.0
 
     # Generate detailed solutions
-    detailed_solutions = _generate_detailed_solutions(payload, reactions, shear, moment, x_axis)
+    detailed_solutions = _generate_detailed_solutions(payload, reactions, shear, moment, x_axis, recommendation)
 
     response = SolveResponse(
         reactions=[
@@ -920,6 +1118,7 @@ def solve_beam(payload: SolveRequest) -> SolveResponse:
         meta=SolveMeta(
             solve_time_ms=_format_float(duration_ms),
             validation_warnings=warnings,
+            recommendation=recommendation,
         ),
         detailed_solutions=detailed_solutions,
     )

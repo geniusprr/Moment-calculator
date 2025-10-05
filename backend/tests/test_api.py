@@ -36,6 +36,7 @@ async def test_solve_endpoint_success():
     assert reactions["A"]["axial"] == pytest.approx(0.0, abs=1e-6)
     assert "normal" in data["diagram"]
     assert data["diagram"]["moment"][0] == pytest.approx(0.0, abs=1e-6)
+    assert data["meta"]["recommendation"]["method"] == "area"
 
 
 @pytest.mark.asyncio

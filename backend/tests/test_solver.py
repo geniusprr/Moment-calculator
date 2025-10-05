@@ -42,6 +42,7 @@ def test_uniform_udl_reactions_and_moment():
     assert reactions["B"].axial == approx(0.0, abs=1e-6)
     assert max(result.diagram.moment) == approx(22.5, rel=5e-2)
     assert result.diagram.normal[-1] == approx(0.0, abs=1e-6)
+    assert result.meta.recommendation.method == "shear"
 
 
 def test_point_load_with_angle():
@@ -60,6 +61,7 @@ def test_point_load_with_angle():
     assert reactions["A"].axial == approx(0.0, abs=1e-6)
     assert reactions["B"].axial == approx(0.0, abs=1e-6)
     assert min(result.diagram.shear) == approx(-4.5, rel=1e-2)
+    assert result.meta.recommendation.method == "area"
 
 
 def test_horizontal_load_generates_axial_reaction():
@@ -77,6 +79,7 @@ def test_horizontal_load_generates_axial_reaction():
     assert reactions["B"].axial == approx(0.0, abs=1e-6)
     assert min(result.diagram.normal) == approx(-8.0, rel=1e-3)
     assert all(abs(value) < 1e-6 for value in result.diagram.shear)
+    assert result.meta.recommendation.method == "shear"
 
 
 def test_concentrated_moment_effect():
@@ -93,6 +96,50 @@ def test_concentrated_moment_effect():
     assert reactions["A"].vertical == approx(-8.0, rel=1e-3)
     assert reactions["B"].vertical == approx(8.0, rel=1e-3)
     assert max(result.diagram.moment) == approx(80.0, rel=1e-2)
+    assert result.meta.recommendation.method == "shear"
+
+
+def test_triangular_increasing_distributed_load():
+    request = SolveRequest(
+        length=6.0,
+        supports=_supports(6.0),
+        udls=[
+            UniformDistributedLoad(
+                id="Qtri",
+                magnitude=6.0,
+                start=0.0,
+                end=6.0,
+                direction="down",
+                shape="triangular_increasing",
+            )
+        ],
+        sampling=Sampling(points=301),
+    )
+
+    result = solve_beam(request)
+    reactions = _reaction_map(result)
+
+    assert reactions["A"].vertical == approx(6.0, rel=1e-3)
+    assert reactions["B"].vertical == approx(12.0, rel=1e-3)
+    assert result.meta.recommendation.method == "shear"
+    assert max(result.diagram.moment) == approx(13.86, rel=1e-1)
+
+
+def test_area_method_recommended_for_vertical_point_loads():
+    request = SolveRequest(
+        length=8.0,
+        supports=_supports(8.0),
+        point_loads=[
+            PointLoad(id="P1", magnitude=10.0, position=2.0, angle_deg=-90.0),
+            PointLoad(id="P2", magnitude=5.0, position=6.0, angle_deg=-90.0),
+        ],
+        sampling=Sampling(points=201),
+    )
+
+    result = solve_beam(request)
+
+    assert result.meta.recommendation.method == "area"
+    assert "alan" in result.meta.recommendation.reason.lower()
 
 
 def test_invalid_point_load_position():

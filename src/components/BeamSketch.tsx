@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 
 import type {
@@ -251,6 +251,14 @@ export function BeamSketch({
     return segments;
   }, [length, momentLoads, pointLoads, supports, udls]);
 
+  const UDL_AREA_HEIGHT = 64;
+  const UDL_TOP = `calc(50% - ${15 + UDL_AREA_HEIGHT}px)`;
+  const ORANGE_COLOR = "#f97316";
+  const UDL_ARROW_HEAD_HEIGHT = 12;
+  const UDL_ARROW_BODY_HEIGHT = UDL_AREA_HEIGHT - UDL_ARROW_HEAD_HEIGHT;
+  const UDL_ARROW_WIDTH = 18;
+  const UDL_ARROW_HALF_WIDTH = UDL_ARROW_WIDTH / 2;
+
   return (
     <div
       className="panel space-y-3 p-4"
@@ -300,79 +308,156 @@ export function BeamSketch({
             <svg
               className="h-16 w-6 text-red-500"
               viewBox="0 0 24 64"
-              style={{ transform: `rotate(${load.angleDeg + 90}deg)` }}
+              style={{ transform: `rotate(${-(load.angleDeg + 90)}deg)` }}
             >
+              <title>{`${load.id} açısı: ${load.angleDeg}°`}</title>
               <line x1="12" y1="0" x2="12" y2="54" stroke="currentColor" strokeWidth="2.5" />
               <polygon points="6,54 18,54 12,64" fill="currentColor" />
             </svg>
           </div>
         ))}
 
-        {/* UDL spans rebuilt: draggable start/end + whole-span center drag + arrows touching beam */}
+        {/* UDL spans with improved arrow alignment */}
         {udlSpans.map((load) => {
-          const startPos = 2 + (load.startPercent * 0.96);
-          const width = (load.endPercent - load.startPercent) * 0.96;
-          const endPos = startPos + width;
-          const arrowCount = Math.max(3, Math.min(8, Math.floor(width * 0.5))); // Daha az ok
+          const startPercent = 2 + load.startPercent * 0.96;
+          const widthPercent = (load.endPercent - load.startPercent) * 0.96;
+          const arrowCount = Math.max(3, Math.min(11, Math.round(widthPercent / 8)));
+          const labelText = load.shape === "uniform"
+            ? `${load.id}: ${load.magnitude.toFixed(1)} kN/m`
+            : `${load.id}: max ${load.magnitude.toFixed(1)} kN/m`;
+
+          const isUpwardLoad = load.direction === "up";
+          const baseLinePosition: CSSProperties = isUpwardLoad ? { bottom: 0 } : { top: 0 };
+          const getScaleForRatio = (ratio: number) => {
+            if (load.shape === "uniform") {
+              return 1;
+            }
+            const triangularRatio = load.shape === "triangular_increasing" ? ratio : 1 - ratio;
+            // Use full range 0 to 1 for triangular loads (no minimum scale)
+            return triangularRatio;
+          };
+          const startScale = getScaleForRatio(0);
+          const endScale = getScaleForRatio(1);
+
+          // Calculate line positions to touch top of scaled arrows (body + head both scaled)
+          const startArrowTotalHeight = (UDL_ARROW_BODY_HEIGHT + UDL_ARROW_HEAD_HEIGHT) * startScale;
+          const endArrowTotalHeight = (UDL_ARROW_BODY_HEIGHT + UDL_ARROW_HEAD_HEIGHT) * endScale;
+
+          const arrowPositions = arrowCount > 1
+            ? Array.from({ length: arrowCount }, (_, index) => (index / (arrowCount - 1)) * 100)
+            : [50];
+
           return (
             <div
               key={load.id}
-              className="absolute inset-x-0 z-30"
-              style={{ bottom: 'calc(50% + 15px)', height: '70px' }}
-              onContextMenu={(event) => openContextMenu(event, { kind: "udl", id: load.id, x: (load.start + load.end) / 2 })}
+              className="absolute z-30"
+              style={{
+                left: `${startPercent}%`,
+                width: `${widthPercent}%`,
+                top: UDL_TOP,
+                height: `${UDL_AREA_HEIGHT}px`,
+              }}
+              onContextMenu={(event) =>
+                openContextMenu(event, { kind: "udl", id: load.id, x: (load.start + load.end) / 2 })
+              }
             >
-              {/* Magnitude label at top */}
               <div
                 className="absolute pointer-events-none"
-                style={{ left: `${startPos + width / 2}%`, transform: "translateX(-50%)", top: "0px" }}
+                style={{
+                  top: -32,
+                  left: "50%",
+                  transform: "translateX(-50%)",
+                  whiteSpace: "nowrap",
+                  maxWidth: "100%",
+                }}
               >
                 <span className="rounded bg-orange-600/90 px-2 py-0.5 text-xs font-semibold text-white">
-                  {load.magnitude.toFixed(1)} kN/m
+                  {labelText}
                 </span>
               </div>
 
-              {/* Horizontal line at top connecting arrows */}
-              <div
-                className="absolute h-0.5 bg-orange-500"
-                style={{ left: `${startPos}%`, width: `${width}%`, top: '28px' }}
-              />
+              {load.shape === "uniform" ? (
+                <div
+                  className="absolute left-0 right-0 h-0.5"
+                  style={{ ...baseLinePosition, backgroundColor: ORANGE_COLOR }}
+                />
+              ) : (
+                <svg
+                  className="absolute pointer-events-none"
+                  style={{
+                    bottom: 0,
+                    left: 0,
+                    width: `100%`,
+                    height: `${UDL_AREA_HEIGHT}px`
+                  }}
+                  viewBox={`0 0 100 ${UDL_AREA_HEIGHT}`}
+                  preserveAspectRatio="none"
+                >
+                  <line
+                    x1="0"
+                    y1={UDL_AREA_HEIGHT - startArrowTotalHeight}
+                    x2="100"
+                    y2={UDL_AREA_HEIGHT - endArrowTotalHeight}
+                    stroke={ORANGE_COLOR}
+                    strokeWidth="1.5"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                </svg>
+              )}
 
-              {/* Multiple arrows representing distributed load */}
               <div
-                className="absolute cursor-grab hover:opacity-80"
-                style={{ left: `${startPos}%`, width: `${width}%`, top: '28px', height: '42px' }}
+                className="absolute inset-0 cursor-grab transition hover:opacity-90"
                 onPointerDown={beginDrag({ type: "udl-center", id: load.id, pointerId: 0 })}
+                title="Yayılı yükü sürükle"
               >
-                {Array.from({ length: arrowCount }).map((_, i) => {
-                  const position = (i / (arrowCount - 1)) * 100;
+                {arrowPositions.map((position, index) => {
+                  const ratio = arrowCount > 1 ? index / (arrowCount - 1) : 0.5;
+                  const arrowScale = getScaleForRatio(ratio);
+                  // Scale both body and head proportionally
+                  const scaledBodyHeight = UDL_ARROW_BODY_HEIGHT * arrowScale;
+                  const scaledHeadHeight = UDL_ARROW_HEAD_HEIGHT * arrowScale;
+                  const totalHeight = scaledBodyHeight + scaledHeadHeight;
+                  const scaledHeadWidth = 5 * arrowScale;
+                  const transforms = ["translateX(-50%)"];
+                  if (load.direction === "up") {
+                    transforms.push("rotate(180deg)");
+                  }
                   return (
                     <svg
-                      key={i}
+                      key={`${load.id}-arrow-${index}`}
                       className="absolute text-orange-500"
-                      style={{ left: `${position}%`, transform: 'translateX(-50%)', top: '0' }}
-                      width="16"
-                      height="42"
-                      viewBox="0 0 16 42"
+                      style={{ left: `${position}%`, transform: transforms.join(" "), bottom: 0 }}
+                      width={UDL_ARROW_WIDTH}
+                      height={UDL_AREA_HEIGHT}
+                      viewBox={`0 0 ${UDL_ARROW_WIDTH} ${UDL_AREA_HEIGHT}`}
                     >
-                      <line x1="8" y1="0" x2="8" y2="34" stroke="currentColor" strokeWidth="2" />
-                      <polygon points="4,34 12,34 8,42" fill="currentColor" />
+                      <line
+                        x1={UDL_ARROW_HALF_WIDTH}
+                        y1={UDL_AREA_HEIGHT - totalHeight + 1}
+                        x2={UDL_ARROW_HALF_WIDTH}
+                        y2={UDL_AREA_HEIGHT - scaledHeadHeight}
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      />
+                      <polygon
+                        points={`${UDL_ARROW_HALF_WIDTH - scaledHeadWidth},${UDL_AREA_HEIGHT - scaledHeadHeight} ${UDL_ARROW_HALF_WIDTH + scaledHeadWidth},${UDL_AREA_HEIGHT - scaledHeadHeight} ${UDL_ARROW_HALF_WIDTH},${UDL_AREA_HEIGHT}`}
+                        fill="currentColor"
+                      />
                     </svg>
                   );
                 })}
               </div>
 
-              {/* Invisible start drag handle */}
               <div
-                className="absolute h-10 w-8 translate-x-[-50%] cursor-ew-resize z-10"
-                style={{ left: `${startPos}%`, top: '28px' }}
+                className="absolute z-40 w-8 translate-x-[-50%] cursor-ew-resize"
+                style={{ left: "0%", top: "8px", height: `${UDL_AREA_HEIGHT - 16}px` }}
                 onPointerDown={beginDrag({ type: "udl-start", id: load.id, pointerId: 0 })}
                 title="Yayılı yük başlangıcını sürükle"
               />
 
-              {/* Invisible end drag handle */}
               <div
-                className="absolute h-10 w-8 translate-x-[-50%] cursor-ew-resize z-10"
-                style={{ left: `${endPos}%`, top: '28px' }}
+                className="absolute z-40 w-8 translate-x-[-50%] cursor-ew-resize"
+                style={{ left: "100%", top: "8px", height: `${UDL_AREA_HEIGHT - 16}px` }}
                 onPointerDown={beginDrag({ type: "udl-end", id: load.id, pointerId: 0 })}
                 title="Yayılı yük bitişini sürükle"
               />
@@ -431,8 +516,8 @@ export function BeamSketch({
               {/* Horizontal dimension line */}
               <div
                 className="absolute h-0.5 bg-slate-400"
-                style={{ 
-                  left: `${2 + startPercent * 0.96}%`, 
+                style={{
+                  left: `${2 + startPercent * 0.96}%`,
                   width: `${(endPercent - startPercent) * 0.96}%`,
                   top: "calc(50% + 53px)"
                 }}
