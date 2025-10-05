@@ -896,7 +896,7 @@ export default function HomePage() {
           <div className="panel space-y-6 p-6">
             <div>
               <span className="tag">Çözüm</span>
-              <p className="text-sm text-slate-400">Mesnet tepkileri, denge kontrolü ve çözüm işlemleri</p>
+              <p className="text-sm text-slate-400">Mesnet tepkileri ve denge kontrolü</p>
             </div>
 
             <div className="space-y-6">
@@ -908,6 +908,30 @@ export default function HomePage() {
                   <p className="mt-3 text-[11px] text-cyan-200/70">Mesnet reaksiyonlarından sonra bu yöntemle devam edin.</p>
                 </div>
               )}
+
+              {/* Detailed Solution Button */}
+              {result?.detailed_solutions && (
+                <button
+                  onClick={() => setIsDetailedSolutionOpen(true)}
+                  className="flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-cyan-500 to-blue-500 px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:from-cyan-600 hover:to-blue-600 hover:shadow-xl"
+                >
+                  <svg
+                    className="h-4 w-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                    />
+                  </svg>
+                  Çözümü Göster
+                </button>
+              )}
+
               {/* Results Section */}
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
@@ -957,50 +981,6 @@ export default function HomePage() {
                   </div>
                 )}
               </div>
-
-              {/* Derivation Steps Section */}
-              {result?.derivations && result.derivations.length > 0 ? (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-semibold text-slate-300">Çözüm İşlemleri</h3>
-                    {result?.detailed_solutions && (
-                      <button
-                        onClick={() => setIsDetailedSolutionOpen(true)}
-                        className="flex items-center gap-2 rounded-full bg-gradient-to-r from-cyan-500 to-blue-500 px-4 py-2 text-sm font-semibold text-white shadow-lg transition hover:from-cyan-600 hover:to-blue-600 hover:shadow-xl"
-                      >
-                        <svg
-                          className="h-4 w-4"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                          />
-                        </svg>
-                        Detaylı Çözümü Göster
-                      </button>
-                    )}
-                  </div>
-                  <ol className="space-y-4 text-slate-100">
-                    {result.derivations.map((step, index) => (
-                      <li key={`${step}-${index}`} className="panel-muted border border-slate-800/60 p-4">
-                        <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
-                          Adım {index + 1}
-                        </p>
-                        <BlockMath math={step} />
-                      </li>
-                    ))}
-                  </ol>
-                </div>
-              ) : (
-                <div className="panel-muted p-6 text-sm text-slate-400">
-                  Türetme adımlarını görmek için çözücüyü çalıştırın.
-                </div>
-              )}
             </div>
           </div>
         </div>

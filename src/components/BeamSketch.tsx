@@ -321,7 +321,7 @@ export function BeamSketch({
         {udlSpans.map((load) => {
           const startPercent = 2 + load.startPercent * 0.96;
           const widthPercent = (load.endPercent - load.startPercent) * 0.96;
-          const arrowCount = Math.max(3, Math.min(11, Math.round(widthPercent / 8)));
+          const arrowCount = Math.max(5, Math.min(11, Math.round(widthPercent / 5)));
           const labelText = load.shape === "uniform"
             ? `${load.id}: ${load.magnitude.toFixed(1)} kN/m`
             : `${load.id}: max ${load.magnitude.toFixed(1)} kN/m`;
@@ -378,7 +378,7 @@ export function BeamSketch({
 
               {load.shape === "uniform" ? (
                 <div
-                  className="absolute left-0 right-0 h-0.5"
+                  className="absolute left-0 right-0 h-1"
                   style={{ ...baseLinePosition, backgroundColor: ORANGE_COLOR }}
                 />
               ) : (
@@ -399,7 +399,7 @@ export function BeamSketch({
                     x2="100"
                     y2={UDL_AREA_HEIGHT - endArrowTotalHeight}
                     stroke={ORANGE_COLOR}
-                    strokeWidth="1.5"
+                    strokeWidth="2.5"
                     vectorEffect="non-scaling-stroke"
                   />
                 </svg>

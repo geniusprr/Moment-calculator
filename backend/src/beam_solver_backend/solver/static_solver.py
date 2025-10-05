@@ -94,12 +94,19 @@ def _udl_shear_contribution(udl, x_axis: np.ndarray) -> np.ndarray:
 
 
 def _determine_method_recommendation(payload: SolveRequest) -> MethodRecommendation:
-    has_distributed = len(payload.udls) > 0
+    has_point_loads = len(payload.point_loads) > 0
     has_moments = len(payload.moment_loads) > 0
     has_axial_point = any(abs(_axial_component(load)) > 1e-6 for load in payload.point_loads)
-    has_point_loads = len(payload.point_loads) > 0
-
-    if has_point_loads and not has_distributed and not has_moments and not has_axial_point:
+    
+    # Yayılı yükleri uniform ve üçgen olarak ayır
+    has_uniform_distributed = any(udl.shape == "uniform" for udl in payload.udls)
+    has_triangular_distributed = any(
+        udl.shape in ["triangular_increasing", "triangular_decreasing"] 
+        for udl in payload.udls
+    )
+    
+    # Kural 1: Sadece tekil yükler varsa Alan yöntemi
+    if has_point_loads and not payload.udls and not has_moments and not has_axial_point:
         return MethodRecommendation(
             method="area",
             title="Alan Yöntemi",
@@ -108,13 +115,47 @@ def _determine_method_recommendation(payload: SolveRequest) -> MethodRecommendat
                 "doğrusal segmentlerden oluşur; alan yöntemi bu durumda doğrudan ve hızlıdır."
             ),
         )
-
+    
+    # Kural 2: Sadece düzgün yayılı yük varsa Alan yöntemi
+    if has_uniform_distributed and not has_triangular_distributed and not has_point_loads and not has_moments:
+        return MethodRecommendation(
+            method="area",
+            title="Alan Yöntemi",
+            reason=(
+                "Sadece düzgün yayılı yükler bulunduğundan kesme diyagramı doğrusal ve moment diyagramı "
+                "parabolik olur; alan yöntemi bu durumda pratik ve görselleştirmesi kolaydır."
+            ),
+        )
+    
+    # Kural 3: Düzgün yayılı + tekil yükler + moment varsa Alan yöntemi
+    if has_uniform_distributed and not has_triangular_distributed and has_point_loads and has_moments:
+        return MethodRecommendation(
+            method="area",
+            title="Alan Yöntemi",
+            reason=(
+                "Düzgün yayılı yükler, tekil yükler ve momentler birlikte bulunuyor. Alan yöntemi bu kombinasyonda "
+                "kesme diyagramının alanlarını kullanarak moment diyagramını adım adım inşa edebilir."
+            ),
+        )
+    
+    # Kural 4: Sadece moment varsa Alan yöntemi
+    if has_moments and not has_point_loads and not payload.udls:
+        return MethodRecommendation(
+            method="area",
+            title="Alan Yöntemi",
+            reason=(
+                "Sadece mesnet momentleri bulunduğundan kesme diyagramı sıfır kalır ve moment diyagramı "
+                "basit sabit değerlerden oluşur; alan yöntemi doğrudan uygulanabilir."
+            ),
+        )
+    
+    # Kural 5: Üçgen yayılı yük varsa veya diğer karmaşık durumlar için Kesme yöntemi
     return MethodRecommendation(
         method="shear",
         title="Kesme Yöntemi",
         reason=(
-            "Yayılı veya üçgen yükler, açılı kuvvetler ya da mesnet momentleri bulunduğundan moment diyagramı parabolik/"
-            "karmaşık davranır; kesme yöntemi bu tür durumlarda daha pratik ve hatasız ilerler."
+            "Üçgen yayılı yükler, açılı kuvvetler veya karmaşık yük kombinasyonları bulunduğundan moment "
+            "diyagramı parabolik/karmaşık davranır; kesme yöntemi bu tür durumlarda daha pratik ve hatasız ilerler."
         ),
     )
 
@@ -1070,7 +1111,11 @@ def solve_beam(payload: SolveRequest) -> SolveResponse:
     reactions, derivations = _compute_reactions(payload)
     recommendation = _determine_method_recommendation(payload)
 
-    x_axis = np.linspace(0.0, payload.length, num=sampling_points, dtype=float)
+    x_axis = np.linspace(0.0, payload.length, num=sampling_points, dtype=float, endpoint=True)
+    # Ensure the last point is exactly at the beam length to avoid floating-point errors
+    if len(x_axis) > 0:
+        x_axis[-1] = payload.length
+    
     shear = _shear_diagram(payload, x_axis, reactions)
     normal = _normal_diagram(payload, x_axis, reactions)
     moment = _moment_diagram(x_axis, shear)
@@ -1081,16 +1126,25 @@ def solve_beam(payload: SolveRequest) -> SolveResponse:
     supports_sorted = sorted(payload.supports, key=lambda support: support.position)
     right_support_pos = supports_sorted[-1].position
     moment_at_right = float(np.interp(right_support_pos, x_axis, moment))
-    if abs(moment_at_right) > 1e-2:
+    
+    # Maksimum momenti bul (göreli hata kontrolü için)
+    max_moment = float(np.max(np.abs(moment)))
+    
+    # Mutlak eşik (0.1 kNm) veya göreli eşik (%0.5 of max moment)
+    absolute_threshold = 0.1
+    relative_threshold = 0.005 * max_moment if max_moment > 0 else absolute_threshold
+    threshold = max(absolute_threshold, relative_threshold)
+    
+    if abs(moment_at_right) > threshold:
         warnings.append(
-            f"Moment at x={right_support_pos:.2f} m is not close to zero (|{moment_at_right:.3f}|). Numerical drift may be present."
+            f"x={right_support_pos:.2f} m noktasındaki moment sıfıra yakın değil (|{moment_at_right:.3f}|). Sayısal sapma mevcut olabilir."
         )
 
     axial_balance = sum(reaction.axial for reaction in reactions) - sum(
         _axial_component(load) for load in payload.point_loads
     )
     if abs(axial_balance) > 1e-3:
-        warnings.append("Axial equilibrium residual is larger than expected.")
+        warnings.append("Eksenel denge artığı beklenenden büyük.")
 
     duration_ms = (perf_counter() - start_time) * 1000.0
 
