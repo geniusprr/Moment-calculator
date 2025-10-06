@@ -26,8 +26,6 @@ interface BeamFormProps {
   onMomentChange: (id: string, field: keyof MomentLoadInput, value: string | number) => void;
   onAddMoment: () => void;
   onRemoveMoment: (id: string) => void;
-  samplingPoints: number;
-  onSamplingChange: (value: number) => void;
   onSolve: () => void;
   onReset: () => void;
   solving: boolean;
@@ -60,8 +58,6 @@ export function BeamForm({
   onMomentChange,
   onAddMoment,
   onRemoveMoment,
-  samplingPoints,
-  onSamplingChange,
   onSolve,
   onReset,
   solving,
@@ -94,18 +90,6 @@ export function BeamForm({
             className={fieldClasses}
             value={length}
             onChange={(event) => onLengthChange(Number(event.target.value))}
-          />
-        </label>
-        <label className="space-y-2">
-          <span className={labelClass}>Örnekleme noktaları</span>
-          <input
-            type="number"
-            min={101}
-            max={801}
-            step={2}
-            className={fieldClasses}
-            value={samplingPoints}
-            onChange={(event) => onSamplingChange(Number(event.target.value))}
           />
         </label>
       </section>

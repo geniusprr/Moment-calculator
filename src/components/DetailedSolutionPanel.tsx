@@ -337,7 +337,7 @@ export function DetailedSolutionPanel({
                                                                     Açıklama
                                                                 </p>
                                                                 <div className="rounded-lg bg-slate-800/30 border border-slate-700/50 p-4">
-                                                                    <p className="whitespace-pre-line text-sm leading-relaxed text-slate-200 font-mono">
+                                                                    <p className="whitespace-pre-line text-[15px] leading-7 text-slate-100 font-sans">
                                                                         {step.explanation}
                                                                     </p>
                                                                 </div>

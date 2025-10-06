@@ -36,7 +36,7 @@
   - M(x) = ∫_0^x V(s) ds
 
 ## 6. Sayısal Stabilite ve Kontroller
-- Δx = L / (sampling_points - 1); varsayılan 0.025 m adım (L=5 m için 201 nokta).
+- Δx = L / (N - 1); uygulamada N = 401 sabit tutulur (L = 5 m için yaklaşık 0.0125 m adım).
 - Son noktada |M(L)| < 1e-6 şartı; değilse yuvarlama hatası kullanıcıya uyarı olarak döner.
 - Girişler metre ve kilonewton cinsinden yorumlanır; dönüşüm yapılmıyorsa kullanıcı uyarılır.
 

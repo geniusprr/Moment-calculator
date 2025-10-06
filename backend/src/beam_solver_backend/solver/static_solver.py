@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from time import perf_counter
-from typing import List
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -27,6 +27,13 @@ from beam_solver_backend.schemas.beam import (
     SolveMeta,
     SupportReaction,
 )
+
+
+DEFAULT_SAMPLING_POINTS = 401
+ROOT_TOL = 1e-9
+
+
+MomentCandidate = Tuple[float, float]
 
 
 def _format_float(value: float) -> float:
@@ -91,6 +98,167 @@ def _udl_shear_contribution(udl, x_axis: np.ndarray) -> np.ndarray:
         return sign * (udl.magnitude * (xi - (xi**2) / (2.0 * span)))
 
     raise ValueError(f"Unsupported distributed load shape: {udl.shape}")
+
+
+def _udl_moment_contribution(udl, x_axis: np.ndarray) -> np.ndarray:
+    span = udl.end - udl.start
+    if span <= 0:
+        return np.zeros_like(x_axis, dtype=float)
+
+    base = np.maximum(x_axis - udl.start, 0.0)
+    xi = np.clip(base, 0.0, span)
+    w = _udl_sign(udl) * udl.magnitude
+
+    if udl.shape == "uniform":
+        return w * ((base * xi) - 0.5 * xi**2)
+
+    if udl.shape == "triangular_increasing":
+        return (w / span) * ((base * (xi**2)) / 2.0 - (xi**3) / 3.0)
+
+    if udl.shape == "triangular_decreasing":
+        return w * (
+            base * xi
+            - 0.5 * xi**2
+            - (base * (xi**2)) / (2.0 * span)
+            + (xi**3) / (3.0 * span)
+        )
+
+    raise ValueError(f"Unsupported distributed load shape: {udl.shape}")
+
+
+def _add_unique_point(points: List[float], value: float, beam_length: float, tol: float = 1e-9) -> None:
+    if math.isnan(value) or math.isinf(value):
+        return
+    clamped = min(max(value, 0.0), beam_length)
+    for existing in points:
+        if math.isclose(existing, clamped, abs_tol=tol, rel_tol=0.0):
+            return
+    points.append(clamped)
+
+
+def _moment_value(payload: SolveRequest, reactions: List[SupportReaction], position: float) -> float:
+    clamped = min(max(position, 0.0), payload.length)
+    return float(_moment_diagram(payload, np.array([clamped], dtype=float), reactions)[0])
+
+
+def _register_moment_candidate(
+    candidates: List[MomentCandidate],
+    payload: SolveRequest,
+    reactions: List[SupportReaction],
+    position: float,
+    tol: float = 1e-6,
+) -> None:
+    if math.isnan(position) or math.isinf(position):
+        return
+    clamped = min(max(position, 0.0), payload.length)
+    for existing_x, _ in candidates:
+        if math.isclose(existing_x, clamped, abs_tol=tol, rel_tol=0.0):
+            return
+    candidates.append((clamped, _moment_value(payload, reactions, clamped)))
+
+
+def _compute_moment_extrema(
+    payload: SolveRequest,
+    reactions: List[SupportReaction],
+    x_axis: np.ndarray,
+    shear: np.ndarray,
+) -> Dict[str, Optional[MomentCandidate]]:
+    candidates: List[MomentCandidate] = []
+
+    _register_moment_candidate(candidates, payload, reactions, 0.0)
+    _register_moment_candidate(candidates, payload, reactions, payload.length)
+
+    for idx in range(len(x_axis) - 1):
+        left = float(x_axis[idx])
+        right = float(x_axis[idx + 1])
+        s_left = float(shear[idx])
+        s_right = float(shear[idx + 1])
+
+        if math.isclose(s_left, 0.0, abs_tol=ROOT_TOL):
+            _register_moment_candidate(candidates, payload, reactions, left)
+        if math.isclose(s_right, 0.0, abs_tol=ROOT_TOL):
+            _register_moment_candidate(candidates, payload, reactions, right)
+
+        sign_change = s_left * s_right < 0.0
+        near_zero = (abs(s_left) < 1e-6) or (abs(s_right) < 1e-6)
+
+        if sign_change or near_zero:
+            root = _locate_shear_zero(payload, reactions, left, right, s_left, s_right)
+            _register_moment_candidate(candidates, payload, reactions, root)
+            continue
+
+        mid = 0.5 * (left + right)
+        s_mid = float(_shear_diagram(payload, np.array([mid], dtype=float), reactions)[0])
+        if abs(s_mid) < 1e-6:
+            _register_moment_candidate(candidates, payload, reactions, mid)
+        if s_left * s_mid < 0.0:
+            root = _locate_shear_zero(payload, reactions, left, mid, s_left, s_mid)
+            _register_moment_candidate(candidates, payload, reactions, root)
+        elif s_mid * s_right < 0.0:
+            root = _locate_shear_zero(payload, reactions, mid, right, s_mid, s_right)
+            _register_moment_candidate(candidates, payload, reactions, root)
+
+    if not candidates:
+        mid = 0.5 * payload.length
+        _register_moment_candidate(candidates, payload, reactions, mid)
+
+    max_positive_candidates = [candidate for candidate in candidates if candidate[1] >= -1e-9]
+    max_positive = max(max_positive_candidates, key=lambda item: item[1]) if max_positive_candidates else max(
+        candidates, key=lambda item: item[1]
+    )
+
+    negative_candidates = [candidate for candidate in candidates if candidate[1] <= -1e-9]
+    min_negative = min(negative_candidates, key=lambda item: item[1]) if negative_candidates else None
+
+    max_absolute = max(candidates, key=lambda item: abs(item[1]))
+
+    return {
+        "max_positive": max_positive,
+        "min_negative": min_negative,
+        "max_absolute": max_absolute,
+    }
+
+
+def _locate_shear_zero(
+    payload: SolveRequest,
+    reactions: List[SupportReaction],
+    left: float,
+    right: float,
+    shear_left: float,
+    shear_right: float,
+    max_iterations: int = 60,
+    tol: float = ROOT_TOL,
+) -> float:
+    if abs(shear_left) < tol:
+        return left
+    if abs(shear_right) < tol:
+        return right
+
+    lo, hi = left, right
+    f_lo, f_hi = shear_left, shear_right
+
+    if f_lo * f_hi > 0.0:
+        # No guaranteed sign change; fall back to mid-point search for robustness.
+        mid = 0.5 * (lo + hi)
+        f_mid = float(_shear_diagram(payload, np.array([mid], dtype=float), reactions)[0])
+        if f_lo * f_mid <= 0.0:
+            return _locate_shear_zero(payload, reactions, lo, mid, f_lo, f_mid, max_iterations, tol)
+        if f_mid * f_hi <= 0.0:
+            return _locate_shear_zero(payload, reactions, mid, hi, f_mid, f_hi, max_iterations, tol)
+        # Fallback to midpoint if still no sign change detected (flat region).
+        return mid
+
+    for _ in range(max_iterations):
+        mid = 0.5 * (lo + hi)
+        f_mid = float(_shear_diagram(payload, np.array([mid], dtype=float), reactions)[0])
+        if abs(f_mid) < tol or (hi - lo) < tol:
+            return mid
+        if f_lo * f_mid <= 0.0:
+            hi, f_hi = mid, f_mid
+        else:
+            lo, f_lo = mid, f_mid
+
+    return 0.5 * (lo + hi)
 
 
 def _determine_method_recommendation(payload: SolveRequest) -> MethodRecommendation:
@@ -257,20 +425,26 @@ def _normal_diagram(payload: SolveRequest, x_axis: np.ndarray, reactions: List[S
     return normal
 
 
-def _moment_diagram(x_axis: np.ndarray, shear: np.ndarray) -> np.ndarray:
-    moment = np.zeros_like(shear)
-    increments = np.diff(x_axis)
-    trapezoids = 0.5 * (shear[:-1] + shear[1:]) * increments
-    moment[1:] = np.cumsum(trapezoids)
-    return moment
+def _moment_diagram(payload: SolveRequest, x_axis: np.ndarray, reactions: List[SupportReaction]) -> np.ndarray:
+    moment = np.zeros_like(x_axis, dtype=float)
 
+    for reaction in reactions:
+        offsets = np.maximum(x_axis - reaction.position, 0.0)
+        moment += reaction.vertical * offsets
 
-def _apply_concentrated_moments(moment: np.ndarray, x_axis: np.ndarray, payload: SolveRequest) -> np.ndarray:
-    adjusted = moment.copy()
+    for load in payload.point_loads:
+        vertical = _vertical_component(load)
+        offsets = np.maximum(x_axis - load.position, 0.0)
+        moment -= vertical * offsets
+
+    for udl in payload.udls:
+        moment -= _udl_moment_contribution(udl, x_axis)
+
     for load in payload.moment_loads:
         signed = load.magnitude * _moment_sign(load.direction)
-        adjusted += signed * (x_axis >= load.position)
-    return adjusted
+        moment += signed * (x_axis >= load.position)
+
+    return moment
 
 
 def _generate_equilibrium_method(
@@ -531,6 +705,7 @@ def _generate_integration_method(
     shear: np.ndarray,
     moment: np.ndarray,
     x_axis: np.ndarray,
+    moment_extrema: Dict[str, Optional[MomentCandidate]],
 ) -> SolutionMethod:
     """Generate detailed integration method solution steps."""
     steps: List[SolutionStep] = []
@@ -556,9 +731,11 @@ def _generate_integration_method(
 
     # Step 1: Introduction
     intro_explanation = (
-        "Kesme kuvveti ve eğilme momenti arasındaki temel ilişki:\n"
-        "Moment değişimi = Kesme kuvveti × Mesafe\n\n"
-        f"Kiriş {num_regions} bölgeye ayrılacak ve her bölgede moment değişimi hesaplanacak."
+        "Kesme kuvveti ile eğilme momenti arasındaki temel diferansiyel ilişki dM/dx = T(x) şeklindedir.\n"
+        "Yani moment diyagramı, kesme diyagramının integralidir ve alan hesabı ile bulunur.\n\n"
+        "Bu integral, her bölgede kesme kuvvetinin ortalamasını alarak (trapez yaklaşımı) hesaplanır:\n"
+        "ΔM ≈ T_ort × Δx.\n\n"
+        f"Şimdi kirişi {num_regions} bölgeye ayırıp her bölgede momentin nasıl güncellendiğini adım adım inceleyeceğiz."
     )
     steps.append(
         SolutionStep(
@@ -573,17 +750,18 @@ def _generate_integration_method(
     # Step 2: Initial conditions
     v_start = reactions[0].vertical
     initial_explanation = (
-        f"Başlangıç değerleri:\n"
-        f"• Sol uçta ({support_a.id}) kesme kuvveti: V = {v_start:.2f} kN\n"
-        f"• Sol uçta moment: M = 0 kN·m (basit mesnet)"
+        "Başlangıç koşullarını belirleyelim:\n"
+        f"• Sol mesnette ({support_a.id}) kesme kuvveti, hesaplanan mesnet reaksiyonuna eşittir: T(0) = R_{support_a.id} = {v_start:.2f} kN.\n"
+        f"• Basit mesnet moment taşıyamadığından başlangıç momenti sıfırdır: M(0) = 0 kN·m.\n"
+        "Bu değerler her yeni bölgede güncellenecek referans noktalarıdır."
     )
     steps.append(
         SolutionStep(
             step_number=2,
             title="Başlangıç Değerleri",
             explanation=initial_explanation,
-            general_formula=r"M(0) = 0, \quad V(0) = R_A",
-            substituted_formula=rf"M(0) = 0, \quad V(0) = {v_start:.2f}\text{{ kN}}",
+            general_formula=r"M(0) = 0, \quad T(0) = R_A",
+            substituted_formula=rf"M(0) = 0, \quad T(0) = {v_start:.2f}\text{{ kN}}",
         )
     )
 
@@ -612,20 +790,31 @@ def _generate_integration_method(
         
         # Get actual moment at end of region
         m_end_actual = moment[idx_end]
+        moment_error = m_end_actual - next_moment
+        if next_moment < -1e-6:
+            orientation_text = "Negatif moment, üst liflerde basma (saat yönü momenti) oluştuğunu gösterir."
+        elif next_moment > 1e-6:
+            orientation_text = "Pozitif moment, alt liflerde basma (saat yönünün tersi moment) oluştuğunu gösterir."
+        else:
+            orientation_text = "Sonuç sıfıra çok yakın; bu bölgede moment oluşumu ihmal edilebilir düzeydedir."
         
         region_explanation = (
             f"Bölge {i+1}: [{x_start:.2f} m → {x_end:.2f} m]\n\n"
             f"1) Bölge uzunluğu: Δx = {x_end:.2f} - {x_start:.2f} = {length:.2f} m\n"
-            f"2) Kesme kuvveti:\n"
-            f"   Başlangıç: V = {v_start_region:.2f} kN\n"
-            f"   Bitiş: V = {v_end_region:.2f} kN\n"
-            f"   Ortalama: V_ort = {v_avg:.2f} kN\n\n"
-            f"3) Moment değişimi:\n"
-            f"   ΔM = V_ort × Δx\n"
-            f"   ΔM = {v_avg:.2f} × {length:.2f} = {moment_change:.2f} kN·m\n\n"
-            f"4) Yeni moment:\n"
-            f"   M({x_end:.2f}) = M({x_start:.2f}) + ΔM\n"
-            f"   M({x_end:.2f}) = {current_moment:.2f} + {moment_change:.2f} = {next_moment:.2f} kN·m"
+            "   (İki kesit arasındaki yatay mesafe; integralin sınırlarını tanımlar.)\n\n"
+            f"2) Kesme kuvveti değerleri:\n"
+            f"   Başlangıç: T({x_start:.2f}) = {v_start_region:.2f} kN\n"
+            f"   Bitiş: T({x_end:.2f}) = {v_end_region:.2f} kN\n"
+            f"   Ortalama: T_ort = (T_başlangıç + T_bitiş)/2 = {v_avg:.2f} kN\n"
+            "   (Bu bölgede kesme diyagramı doğrusal varsayılır; integral trapez kuralıyla yaklaşıklanır.)\n\n"
+            "3) Moment değişimi:\n"
+            "   ΔM = ∫ T(x) dx ≈ T_ort × Δx\n"
+            f"   ΔM = {v_avg:.2f} × {length:.2f} = {moment_change:.2f} kN·m\n"
+            "   (Kesme kuvvetinin işareti, moment artışının yönünü belirler.)\n\n"
+            f"4) Güncellenen moment değeri:\n"
+            f"   M({x_end:.2f}) = M({x_start:.2f}) + ΔM = {current_moment:.2f} + {moment_change:.2f} = {next_moment:.2f} kN·m\n"
+            f"   {orientation_text}\n\n"
+            f"   Referans kontrolü: Sayısal çözüm M({x_end:.2f}) = {m_end_actual:.2f} kN·m ⇒ fark = {moment_error:.4f} kN·m (yuvarlama kaynaklı)."
         )
         
         steps.append(
@@ -633,7 +822,7 @@ def _generate_integration_method(
                 step_number=step_num,
                 title=f"Bölge {i+1}: x = {x_start:.2f} → {x_end:.2f} m",
                 explanation=region_explanation,
-                general_formula=r"\Delta M = V_{\text{ort}} \times \Delta x, \quad M_{\text{yeni}} = M_{\text{eski}} + \Delta M",
+                general_formula=r"\Delta M = \int_{x_i}^{x_{i+1}} T(x)\,dx \approx T_{\text{ort}} \times \Delta x, \quad M_{i+1} = M_i + \Delta M",
                 substituted_formula=rf"{moment_change:.2f} = {v_avg:.2f} \times {length:.2f}, \quad {next_moment:.2f} = {current_moment:.2f} + {moment_change:.2f}",
                 numerical_result=f"M({x_end:.2f} m) = {next_moment:.2f} kN·m",
                 beam_section=BeamSectionHighlight(
@@ -658,36 +847,82 @@ def _generate_integration_method(
                 step_number=step_num,
                 title=f"Kalan Bölgeler ({regions_to_detail + 1}→{num_regions})",
                 explanation=remaining_explanation,
-                general_formula=r"\Delta M_i = V_{\text{ort},i} \times \Delta x_i",
+                general_formula=r"\Delta M_i = T_{\text{ort},i} \times \Delta x_i",
                 substituted_formula=r"\text{Aynı işlem tekrarlanır}",
             )
         )
         step_num += 1
 
     # Maximum moment
-    max_moment_idx = np.argmax(np.abs(moment))
-    max_moment_x = x_axis[max_moment_idx]
-    max_moment_value = moment[max_moment_idx]
-    
+    max_positive = moment_extrema.get("max_positive")
+    min_negative = moment_extrema.get("min_negative")
+    max_absolute = moment_extrema.get("max_absolute")
+
+    extremum_lines: List[str] = []
+    if max_positive is not None:
+        extremum_lines.append(
+            f"• Pozitif yönde maksimum moment: M = {max_positive[1]:.2f} kN·m (x = {max_positive[0]:.2f} m)"
+        )
+
+    if min_negative is not None:
+        extremum_lines.append(
+            f"• Negatif yönde maksimum moment (minimum): M = {min_negative[1]:.2f} kN·m (x = {min_negative[0]:.2f} m)"
+        )
+
+    highlight_position = None
+    highlight_value = None
+    if max_positive is not None:
+        highlight_position = max_positive[0]
+        highlight_value = max_positive[1]
+
+    if max_absolute is not None:
+        extremum_lines.append(
+            f"• Mutlak değerce en kritik moment: |M| = {abs(max_absolute[1]):.2f} kN·m (x = {max_absolute[0]:.2f} m)"
+        )
+        if highlight_position is None:
+            highlight_position = max_absolute[0]
+            highlight_value = max_absolute[1]
+
+    if highlight_position is None:
+        highlight_position = _format_float(x_axis[np.argmax(np.abs(moment))])
+        highlight_value = float(moment[np.argmax(np.abs(moment))])
+
     max_explanation = (
-        f"Hesaplanan tüm moment değerleri arasından maksimum değer bulunur.\n\n"
-        f"Maksimum moment x = {max_moment_x:.2f} m noktasında oluşur.\n"
-        f"Bu noktada kesme kuvveti sıfıra yakındır."
+        "Kesme kuvveti diyagramında T(x) = 0 olduğu noktalar moment diyagramında ekstremum (maksimum/minimum) değerleri verir.\n\n"
     )
-    
+    if extremum_lines:
+        max_explanation += "\n".join(extremum_lines)
+    else:
+        max_explanation += "Moment diyagramında belirgin bir kritik nokta bulunmadı; uç noktalar kontrol edildi."
+
+    subtitle = []
+    if highlight_value is not None:
+        subtitle.append(rf"M(x) = {highlight_value:.2f} \text{{ kN}}\cdot\text{{m}}")
+    if highlight_position is not None:
+        subtitle.append(rf"x = {highlight_position:.2f} \text{{ m}}")
+
+    if highlight_value is not None and highlight_value < 0.0:
+        label_text = "Minimum Moment"
+    else:
+        label_text = "Maksimum Moment"
+
     steps.append(
         SolutionStep(
             step_number=step_num,
-            title="Maksimum Moment",
+            title="Moment Ekstremumları",
             explanation=max_explanation,
-            general_formula=r"M_{\max} = \max\{M(x) : x \in [0, L]\}",
-            substituted_formula=rf"M_{{\max}} = {max_moment_value:.2f}\text{{ kN}}\cdot\text{{m}} \quad (x = {max_moment_x:.2f}\text{{ m}})",
-            numerical_result=f"✓ M_max = {max_moment_value:.2f} kN·m",
-                beam_section=BeamSectionHighlight(
-                    start=_format_float(max_moment_x),
-                    end=_format_float(max_moment_x),
-                    label="Maksimum Moment"
-                ),
+            general_formula=r"T(x) = \dfrac{dM}{dx} = 0",
+            substituted_formula=",\; ".join(subtitle) if subtitle else None,
+            numerical_result=(
+                f"{label_text}: M = {highlight_value:.2f} kN·m (x = {highlight_position:.2f} m)"
+                if highlight_value is not None and highlight_position is not None
+                else None
+            ),
+            beam_section=BeamSectionHighlight(
+                start=_format_float(highlight_position),
+                end=_format_float(highlight_position),
+                label=label_text,
+            ),
         )
     )
     step_num += 1
@@ -1034,13 +1269,14 @@ def _generate_detailed_solutions(
     moment: np.ndarray,
     x_axis: np.ndarray,
     recommendation: MethodRecommendation,
+    moment_extrema: Dict[str, Optional[MomentCandidate]],
 ) -> DetailedSolution:
     """Generate all detailed solution methods."""
     from ..schemas.beam import DiagramData
     
     methods = [
         _generate_equilibrium_method(payload, reactions),
-        _generate_integration_method(payload, reactions, shear, moment, x_axis),
+        _generate_integration_method(payload, reactions, shear, moment, x_axis, moment_extrema),
         _generate_area_method(payload, shear, moment, x_axis),
     ]
 
@@ -1105,27 +1341,112 @@ def _generate_detailed_solutions(
 
 
 def solve_beam(payload: SolveRequest) -> SolveResponse:
-    sampling_points = payload.sampling.points if payload.sampling else 401
+    sampling_points = DEFAULT_SAMPLING_POINTS
 
     start_time = perf_counter()
     reactions, derivations = _compute_reactions(payload)
     recommendation = _determine_method_recommendation(payload)
 
-    x_axis = np.linspace(0.0, payload.length, num=sampling_points, dtype=float, endpoint=True)
-    # Ensure the last point is exactly at the beam length to avoid floating-point errors
-    if len(x_axis) > 0:
-        x_axis[-1] = payload.length
-    
+    base_axis = np.linspace(0.0, payload.length, num=sampling_points, dtype=float, endpoint=True)
+    if base_axis.size > 0:
+        base_axis[0] = 0.0
+        base_axis[-1] = payload.length
+
+    shear_base = _shear_diagram(payload, base_axis, reactions)
+
+    critical_points: List[float] = base_axis.tolist()
+
+    supports_sorted = sorted(payload.supports, key=lambda support: support.position)
+    for support in supports_sorted:
+        _add_unique_point(critical_points, support.position, payload.length)
+
+    for load in payload.point_loads:
+        _add_unique_point(critical_points, load.position, payload.length)
+
+    for udl in payload.udls:
+        _add_unique_point(critical_points, udl.start, payload.length)
+        _add_unique_point(critical_points, udl.end, payload.length)
+        span = udl.end - udl.start
+        if span > 0:
+            for fraction in (0.25, 0.5, 0.75):
+                _add_unique_point(critical_points, udl.start + fraction * span, payload.length)
+
+    for moment_load in payload.moment_loads:
+        _add_unique_point(critical_points, moment_load.position, payload.length)
+
+    for idx in range(len(base_axis) - 1):
+        left = base_axis[idx]
+        right = base_axis[idx + 1]
+        s_left = shear_base[idx]
+        s_right = shear_base[idx + 1]
+
+        if abs(s_left) < ROOT_TOL:
+            _add_unique_point(critical_points, left, payload.length)
+        if abs(s_right) < ROOT_TOL:
+            _add_unique_point(critical_points, right, payload.length)
+
+        if s_left * s_right < 0.0:
+            root = _locate_shear_zero(payload, reactions, left, right, s_left, s_right)
+            _add_unique_point(critical_points, root, payload.length)
+        else:
+            mid = 0.5 * (left + right)
+            s_mid = float(_shear_diagram(payload, np.array([mid], dtype=float), reactions)[0])
+            if s_left * s_mid < 0.0:
+                root = _locate_shear_zero(payload, reactions, left, mid, s_left, s_mid)
+                _add_unique_point(critical_points, root, payload.length)
+            elif s_mid * s_right < 0.0:
+                root = _locate_shear_zero(payload, reactions, mid, right, s_mid, s_right)
+                _add_unique_point(critical_points, root, payload.length)
+
+    x_axis = np.array(sorted(critical_points), dtype=float)
+
     shear = _shear_diagram(payload, x_axis, reactions)
     normal = _normal_diagram(payload, x_axis, reactions)
-    moment = _moment_diagram(x_axis, shear)
-    moment = _apply_concentrated_moments(moment, x_axis, payload)
+    moment = _moment_diagram(payload, x_axis, reactions)
+
+    discontinuity_positions: List[float] = []
+    for reaction in reactions:
+        if abs(reaction.vertical) > ROOT_TOL:
+            discontinuity_positions.append(reaction.position)
+    for load in payload.point_loads:
+        vertical = _vertical_component(load)
+        if abs(vertical) > ROOT_TOL:
+            discontinuity_positions.append(load.position)
+
+    if discontinuity_positions:
+        x_axis_refined: List[float] = []
+        shear_refined: List[float] = []
+        normal_refined: List[float] = []
+        moment_refined: List[float] = []
+
+        for idx, x_val in enumerate(x_axis):
+            is_jump = any(math.isclose(x_val, pos, abs_tol=ROOT_TOL, rel_tol=0.0) for pos in discontinuity_positions)
+            if is_jump:
+                left_eval = float(np.nextafter(x_val, -np.inf))
+                shear_left = float(_shear_diagram(payload, np.array([left_eval], dtype=float), reactions)[0])
+                normal_left = float(_normal_diagram(payload, np.array([left_eval], dtype=float), reactions)[0])
+                moment_left = float(_moment_diagram(payload, np.array([left_eval], dtype=float), reactions)[0])
+                x_axis_refined.append(float(x_val))
+                shear_refined.append(shear_left)
+                normal_refined.append(normal_left)
+                moment_refined.append(moment_left)
+
+            x_axis_refined.append(float(x_val))
+            shear_refined.append(float(shear[idx]))
+            normal_refined.append(float(normal[idx]))
+            moment_refined.append(float(moment[idx]))
+
+        x_axis = np.array(x_axis_refined, dtype=float)
+        shear = np.array(shear_refined, dtype=float)
+        normal = np.array(normal_refined, dtype=float)
+        moment = np.array(moment_refined, dtype=float)
 
     warnings: List[str] = []
 
-    supports_sorted = sorted(payload.supports, key=lambda support: support.position)
+    moment_extrema = _compute_moment_extrema(payload, reactions, x_axis, shear)
+
     right_support_pos = supports_sorted[-1].position
-    moment_at_right = float(np.interp(right_support_pos, x_axis, moment))
+    moment_at_right = moment[-1]
     
     # Maksimum momenti bul (göreli hata kontrolü için)
     max_moment = float(np.max(np.abs(moment)))
@@ -1149,7 +1470,19 @@ def solve_beam(payload: SolveRequest) -> SolveResponse:
     duration_ms = (perf_counter() - start_time) * 1000.0
 
     # Generate detailed solutions
-    detailed_solutions = _generate_detailed_solutions(payload, reactions, shear, moment, x_axis, recommendation)
+    detailed_solutions = _generate_detailed_solutions(
+        payload,
+        reactions,
+        shear,
+        moment,
+        x_axis,
+        recommendation,
+        moment_extrema,
+    )
+
+    max_positive = moment_extrema.get("max_positive")
+    min_negative = moment_extrema.get("min_negative")
+    max_absolute = moment_extrema.get("max_absolute")
 
     response = SolveResponse(
         reactions=[
@@ -1173,6 +1506,12 @@ def solve_beam(payload: SolveRequest) -> SolveResponse:
             solve_time_ms=_format_float(duration_ms),
             validation_warnings=warnings,
             recommendation=recommendation,
+            max_positive_moment=_format_float(max_positive[1]) if max_positive else None,
+            max_positive_position=_format_float(max_positive[0]) if max_positive else None,
+            min_negative_moment=_format_float(min_negative[1]) if min_negative else None,
+            min_negative_position=_format_float(min_negative[0]) if min_negative else None,
+            max_absolute_moment=_format_float(max_absolute[1]) if max_absolute else None,
+            max_absolute_position=_format_float(max_absolute[0]) if max_absolute else None,
         ),
         detailed_solutions=detailed_solutions,
     )

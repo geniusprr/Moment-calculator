@@ -1,14 +1,15 @@
 "use client";
 
 import clsx from "clsx";
+import Image from "next/image";
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
-import { BlockMath } from "react-katex";
 
 import { BeamDiagrams } from "@/components/BeamDiagrams";
 import { BeamForm } from "@/components/BeamForm";
 import { BeamSketch, SketchContextTarget } from "@/components/BeamSketch";
 import { DetailedSolutionPanel } from "@/components/DetailedSolutionPanel";
 import { solveBeam } from "@/lib/api";
+import KtoLogo from "../../assets/KtoLOGO.png";
 import type {
   BeamSolveRequest,
   BeamSolveResponse,
@@ -29,7 +30,6 @@ type PresetConfig = {
     pointLoads: PointLoadInput[];
     udls: UdlInput[];
     momentLoads: MomentLoadInput[];
-    samplingPoints: number;
   };
 };
 
@@ -55,7 +55,6 @@ const PRESETS: PresetConfig[] = [
       pointLoads: [],
       udls: [],
       momentLoads: [],
-      samplingPoints: 401,
     },
   },
   {
@@ -71,7 +70,6 @@ const PRESETS: PresetConfig[] = [
       pointLoads: [],
       udls: [{ id: "Q1", magnitude: 4, start: 0, end: 8, direction: "down", shape: "uniform" }],
       momentLoads: [],
-      samplingPoints: 401,
     },
   },
   {
@@ -87,7 +85,6 @@ const PRESETS: PresetConfig[] = [
       pointLoads: [{ id: "F1", magnitude: 15, position: 5, angleDeg: -90 }],
       udls: [{ id: "Q1", magnitude: 5, start: 6, end: 10, direction: "down", shape: "uniform" }],
       momentLoads: [],
-      samplingPoints: 401,
     },
   },
 ];
@@ -117,7 +114,6 @@ export default function HomePage() {
   const [pointLoads, setPointLoads] = useState<PointLoadInput[]>(clonePointLoads(DEFAULT_PRESET.config.pointLoads));
   const [udls, setUdls] = useState<UdlInput[]>(cloneUdls(DEFAULT_PRESET.config.udls));
   const [momentLoads, setMomentLoads] = useState<MomentLoadInput[]>(cloneMoments(DEFAULT_PRESET.config.momentLoads));
-  const [samplingPoints, setSamplingPoints] = useState(DEFAULT_PRESET.config.samplingPoints);
   const [result, setResult] = useState<BeamSolveResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -252,7 +248,6 @@ export default function HomePage() {
         position: moment.position,
         direction: moment.direction,
       })),
-      sampling: { points: samplingPoints },
     };
 
     startTransition(async () => {
@@ -265,7 +260,7 @@ export default function HomePage() {
         setError(err instanceof Error ? err.message : "Unexpected solver error.");
       }
     });
-  }, [disableSolveReason, length, samplingPoints, sanitizedSupports, sanitizedPointLoads, sanitizedUdls, sanitizedMoments]);
+  }, [disableSolveReason, length, sanitizedSupports, sanitizedPointLoads, sanitizedUdls, sanitizedMoments]);
 
   useEffect(() => {
     if (!pendingPresetKey) {
@@ -287,7 +282,6 @@ export default function HomePage() {
     setPointLoads(clonePointLoads(config.pointLoads));
     setUdls(cloneUdls(config.udls));
     setMomentLoads(cloneMoments(config.momentLoads));
-    setSamplingPoints(config.samplingPoints);
     setResult(null);
     setError(null);
     setActivePreset(preset.key);
@@ -783,19 +777,17 @@ export default function HomePage() {
       {/* Header */}
       <header className="border-b border-slate-800/60 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900">
         <div className="mx-auto flex w-full max-w-none items-center justify-between px-4 py-6 sm:px-6">
-          <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400 to-blue-500 shadow-lg">
-              <svg className="h-7 w-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-              </svg>
+          <div className="flex items-center gap-4">
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white shadow-xl">
+              <Image src={KtoLogo} alt="KTO Logo" className="h-12 w-12 object-contain" priority />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-slate-100">Moment Calculator</h1>
+              <h1 className="text-2xl font-bold text-slate-100">Kiriş Moment Hesaplayıcı</h1>
               <p className="text-sm text-slate-400">Statik kiriş analiz aracı</p>
             </div>
           </div>
           <div className="hidden text-right sm:block">
-            <p className="text-xs text-slate-500">Created by</p>
+            <p className="text-xs text-slate-500">Made by</p>
             <p className="text-sm font-semibold text-slate-300">Deha Özcan</p>
           </div>
         </div>
@@ -856,13 +848,6 @@ export default function HomePage() {
               onMomentChange={handleMomentChange}
               onAddMoment={() => handleAddMoment()}
               onRemoveMoment={handleRemoveMoment}
-              samplingPoints={samplingPoints}
-              onSamplingChange={(value) => {
-                clearPresetSelection();
-                const bounded = Math.round(clampValue(value, 101, 801));
-                const adjusted = bounded % 2 === 0 ? bounded + 1 : bounded;
-                setSamplingPoints(adjusted);
-              }}
               onSolve={runSolve}
               onReset={handleReset}
               solving={isPending}

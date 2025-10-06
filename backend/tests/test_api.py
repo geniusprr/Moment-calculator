@@ -21,7 +21,6 @@ async def test_solve_endpoint_success():
         ],
         "udls": [],
         "moment_loads": [],
-        "sampling": {"points": 201},
     }
 
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:

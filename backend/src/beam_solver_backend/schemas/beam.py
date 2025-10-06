@@ -39,17 +39,12 @@ class MomentLoad(BaseModel):
     direction: MomentDirection = Field(default="ccw")
 
 
-class Sampling(BaseModel):
-    points: int = Field(default=201, ge=51, le=801)
-
-
 class SolveRequest(BaseModel):
     length: float = Field(gt=0.5, le=30.0)
     supports: List[Support] = Field(default_factory=list)
     point_loads: List[PointLoad] = Field(default_factory=list)
     udls: List[UniformDistributedLoad] = Field(default_factory=list)
     moment_loads: List[MomentLoad] = Field(default_factory=list)
-    sampling: Optional[Sampling] = None
 
     @model_validator(mode="after")
     def validate_domain(self, info: ValidationInfo) -> "SolveRequest":
@@ -76,10 +71,6 @@ class SolveRequest(BaseModel):
         for moment in self.moment_loads:
             if not 0 <= moment.position <= length:
                 raise ValueError("Moment application position must lie on the beam span.")
-
-        if self.sampling and self.sampling.points % 2 == 0:
-            # Odd number of points gives symmetric sampling for trapezoidal integration.
-            pass
 
         return self
 
@@ -109,6 +100,12 @@ class SolveMeta(BaseModel):
     solve_time_ms: float
     validation_warnings: List[str]
     recommendation: Optional[MethodRecommendation] = None
+    max_positive_moment: Optional[float] = None
+    max_positive_position: Optional[float] = None
+    min_negative_moment: Optional[float] = None
+    min_negative_position: Optional[float] = None
+    max_absolute_moment: Optional[float] = None
+    max_absolute_position: Optional[float] = None
 
 
 class BeamSupportInfo(BaseModel):

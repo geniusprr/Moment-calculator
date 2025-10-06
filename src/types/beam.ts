@@ -38,9 +38,6 @@ export interface BeamSolveRequest {
   point_loads: Array<{ id: string; magnitude: number; position: number; angle_deg: number }>;
   udls: Array<{ id: string; magnitude: number; start: number; end: number; direction: Direction; shape: UdlShape }>;
   moment_loads: Array<{ id: string; magnitude: number; position: number; direction: MomentDirection }>;
-  sampling?: {
-    points: number;
-  };
 }
 
 export interface SupportReaction {
@@ -164,6 +161,12 @@ export interface BeamSolveResponse {
     solve_time_ms: number;
     validation_warnings: string[];
     recommendation: MethodRecommendation;
+    max_positive_moment?: number;
+    max_positive_position?: number;
+    min_negative_moment?: number;
+    min_negative_position?: number;
+    max_absolute_moment?: number;
+    max_absolute_position?: number;
   };
   detailed_solutions?: DetailedSolution;
 }

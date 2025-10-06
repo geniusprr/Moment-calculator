@@ -22,14 +22,14 @@
   ],
   "udls": [
     { "magnitude": 3.0, "start": 0.0, "end": 5.0 }
-  ],
-  "sampling": { "points": 201 }
+  ]
 }
 `
 - length zorunlu (metre cinsinden > 0.5).
-- supports sabit: sol pin, sağ oller.
+- supports sabit: sol pin, sağ 
+oller.
 - point_loads ve udls dizileri boş olabilir; MVP’de toplam yük sayısı yönetilebilir seviyede (≤3).
-- sampling.points opsiyonel; verilmezse varsayılan 201.
+- Sayısal çözüm 401 noktalı sabit bir örnekleme ızgarası kullanır.
 
 ### Yanıt Gövdesi (200)
 `json
