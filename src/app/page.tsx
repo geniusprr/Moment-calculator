@@ -395,6 +395,27 @@ export default function HomePage() {
     [clearPresetSelection],
   );
 
+  const handlePointLoadMagnitudeChange = useCallback(
+    (id: string, magnitude: number) => {
+      handlePointLoadChange(id, "magnitude", magnitude);
+    },
+    [handlePointLoadChange],
+  );
+
+  const handleUdlMagnitudeChange = useCallback(
+    (id: string, magnitude: number) => {
+      handleUdlChange(id, "magnitude", magnitude);
+    },
+    [handleUdlChange],
+  );
+
+  const handleMomentMagnitudeChange = useCallback(
+    (id: string, magnitude: number) => {
+      handleMomentChange(id, "magnitude", magnitude);
+    },
+    [handleMomentChange],
+  );
+
   const handleSupportPositionDrag = useCallback(
     (id: string, position: number) => {
       clearPresetSelection();
@@ -775,20 +796,20 @@ export default function HomePage() {
       }}
     >
       {/* Header */}
-      <header className="border-b border-slate-800/60 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900">
-        <div className="mx-auto flex w-full max-w-none items-center justify-between px-4 py-6 sm:px-6">
-          <div className="flex items-center gap-4">
-            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white shadow-xl">
-              <Image src={KtoLogo} alt="KTO Logo" className="h-12 w-12 object-contain" priority />
+      <header className="border-b border-slate-800/50 bg-slate-900/80 backdrop-blur-md">
+        <div className="mx-auto flex w-full max-w-none items-center justify-between px-4 py-3 sm:px-6">
+          <div className="flex items-center gap-3">
+            <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-white/95 shadow-lg ring-1 ring-slate-800/5">
+              <Image src={KtoLogo} alt="KTO Logo" className="h-11 w-11 object-contain" priority />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-slate-100">Kiriş Moment Hesaplayıcı</h1>
-              <p className="text-sm text-slate-400">Statik kiriş analiz aracı</p>
+              <h1 className="text-xl font-bold text-slate-50">Kiriş Moment Hesaplayıcı</h1>
+              <p className="text-xs text-slate-400">Statik analiz aracı</p>
             </div>
           </div>
           <div className="hidden text-right sm:block">
-            <p className="text-xs text-slate-500">Made by</p>
-            <p className="text-sm font-semibold text-slate-300">Deha Özcan</p>
+            <p className="text-[10px] text-slate-500">Made by</p>
+            <p className="text-xs font-semibold text-slate-300">Deha Özcan</p>
           </div>
         </div>
       </header>
@@ -868,6 +889,9 @@ export default function HomePage() {
               onUdlRangeChange={handleUdlRangeDrag}
               onMomentPositionChange={handleMomentPositionDrag}
               onOpenContextMenu={(target, clientX, clientY) => setContextMenu({ target, clientX, clientY })}
+              onPointLoadMagnitudeChange={handlePointLoadMagnitudeChange}
+              onUdlMagnitudeChange={handleUdlMagnitudeChange}
+              onMomentMagnitudeChange={handleMomentMagnitudeChange}
             />
             <BeamDiagrams
               x={diagramData.x}

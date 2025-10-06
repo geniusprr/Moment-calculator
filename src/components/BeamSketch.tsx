@@ -30,6 +30,9 @@ interface BeamSketchProps {
   onUdlRangeChange: (id: string, edge: "start" | "end", position: number) => void;
   onMomentPositionChange: (id: string, position: number) => void;
   onOpenContextMenu: (target: SketchContextTarget, clientX: number, clientY: number) => void;
+  onPointLoadMagnitudeChange?: (id: string, magnitude: number) => void;
+  onUdlMagnitudeChange?: (id: string, magnitude: number) => void;
+  onMomentMagnitudeChange?: (id: string, magnitude: number) => void;
 }
 
 interface DragState {
@@ -52,9 +55,17 @@ export function BeamSketch({
   onUdlRangeChange,
   onMomentPositionChange,
   onOpenContextMenu,
+  onPointLoadMagnitudeChange,
+  onUdlMagnitudeChange,
+  onMomentMagnitudeChange,
 }: BeamSketchProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [dragState, setDragState] = useState<DragState | null>(null);
+  const [editingValue, setEditingValue] = useState<{
+    type: "pointLoad" | "udl" | "moment" | "dimension";
+    id: string;
+    value: string;
+  } | null>(null);
 
   const beamLength = Math.max(length, 1e-4);
 
@@ -192,6 +203,48 @@ export function BeamSketch({
     [onOpenContextMenu],
   );
 
+  const handleValueClick = useCallback(
+    (event: React.MouseEvent, type: "pointLoad" | "udl" | "moment", id: string, currentValue: number) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setEditingValue({ type, id, value: currentValue.toFixed(1) });
+    },
+    [],
+  );
+
+  const handleValueInputChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!editingValue) return;
+    setEditingValue({ ...editingValue, value: event.target.value });
+  }, [editingValue]);
+
+  const handleValueInputBlur = useCallback(() => {
+    if (!editingValue) return;
+    
+    const numValue = parseFloat(editingValue.value);
+    if (!isNaN(numValue) && numValue > 0) {
+      switch (editingValue.type) {
+        case "pointLoad":
+          onPointLoadMagnitudeChange?.(editingValue.id, numValue);
+          break;
+        case "udl":
+          onUdlMagnitudeChange?.(editingValue.id, numValue);
+          break;
+        case "moment":
+          onMomentMagnitudeChange?.(editingValue.id, numValue);
+          break;
+      }
+    }
+    setEditingValue(null);
+  }, [editingValue, onPointLoadMagnitudeChange, onUdlMagnitudeChange, onMomentMagnitudeChange]);
+
+  const handleValueInputKeyDown = useCallback((event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Enter") {
+      event.currentTarget.blur();
+    } else if (event.key === "Escape") {
+      setEditingValue(null);
+    }
+  }, []);
+
   const supportMarkers = useMemo(
     () =>
       supports.map((support) => ({
@@ -301,9 +354,27 @@ export function BeamSketch({
             onContextMenu={(event) => openContextMenu(event, { kind: "point", id: load.id, x: load.position })}
             onPointerDown={beginDrag({ type: "point", id: load.id, pointerId: 0 })}
           >
-            <span className="mb-0.5 rounded bg-red-500/90 px-1.5 py-0.5 text-xs font-semibold text-white">
-              {load.id}: {load.magnitude.toFixed(1)}kN
-            </span>
+            {editingValue?.type === "pointLoad" && editingValue.id === load.id ? (
+              <input
+                type="number"
+                autoFocus
+                className="mb-0.5 w-20 rounded bg-red-500/90 px-1.5 py-0.5 text-xs font-semibold text-white text-center outline-none ring-2 ring-white"
+                value={editingValue.value}
+                onChange={handleValueInputChange}
+                onBlur={handleValueInputBlur}
+                onKeyDown={handleValueInputKeyDown}
+                onClick={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
+              />
+            ) : (
+              <span 
+                className="mb-0.5 rounded bg-red-500/90 px-1.5 py-0.5 text-xs font-semibold text-white cursor-pointer hover:ring-2 hover:ring-white/60 transition-all pointer-events-auto"
+                onClick={(e) => handleValueClick(e, "pointLoad", load.id, load.magnitude)}
+                title="Değeri düzenlemek için tıklayın"
+              >
+                {load.id}: {load.magnitude.toFixed(1)}kN
+              </span>
+            )}
             {/* Arrow pointing down towards the beam */}
             <svg
               className="h-16 w-6 text-red-500"
@@ -362,7 +433,7 @@ export function BeamSketch({
               }
             >
               <div
-                className="absolute pointer-events-none"
+                className="absolute pointer-events-auto"
                 style={{
                   top: -32,
                   left: "50%",
@@ -371,9 +442,27 @@ export function BeamSketch({
                   maxWidth: "100%",
                 }}
               >
-                <span className="rounded bg-orange-600/90 px-2 py-0.5 text-xs font-semibold text-white">
-                  {labelText}
-                </span>
+                {editingValue?.type === "udl" && editingValue.id === load.id ? (
+                  <input
+                    type="number"
+                    autoFocus
+                    className="w-20 rounded bg-orange-600/90 px-2 py-0.5 text-xs font-semibold text-white text-center outline-none ring-2 ring-white"
+                    value={editingValue.value}
+                    onChange={handleValueInputChange}
+                    onBlur={handleValueInputBlur}
+                    onKeyDown={handleValueInputKeyDown}
+                    onClick={(e) => e.stopPropagation()}
+                    onPointerDown={(e) => e.stopPropagation()}
+                  />
+                ) : (
+                  <span 
+                    className="rounded bg-orange-600/90 px-2 py-0.5 text-xs font-semibold text-white cursor-pointer hover:ring-2 hover:ring-white/60 transition-all"
+                    onClick={(e) => handleValueClick(e, "udl", load.id, load.magnitude)}
+                    title="Değeri düzenlemek için tıklayın"
+                  >
+                    {labelText}
+                  </span>
+                )}
               </div>
 
               {load.shape === "uniform" ? (
@@ -474,9 +563,27 @@ export function BeamSketch({
             onContextMenu={(event) => openContextMenu(event, { kind: "moment", id: moment.id, x: moment.position })}
             onPointerDown={beginDrag({ type: "moment", id: moment.id, pointerId: 0 })}
           >
-            <span className="rounded bg-slate-800/90 px-2 py-0.5 text-xs font-semibold text-slate-200 pointer-events-none">
-              {moment.magnitude.toFixed(1)} kN·m
-            </span>
+            {editingValue?.type === "moment" && editingValue.id === moment.id ? (
+              <input
+                type="number"
+                autoFocus
+                className="w-20 rounded bg-slate-800/90 px-2 py-0.5 text-xs font-semibold text-slate-200 text-center outline-none ring-2 ring-white"
+                value={editingValue.value}
+                onChange={handleValueInputChange}
+                onBlur={handleValueInputBlur}
+                onKeyDown={handleValueInputKeyDown}
+                onClick={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
+              />
+            ) : (
+              <span 
+                className="rounded bg-slate-800/90 px-2 py-0.5 text-xs font-semibold text-slate-200 pointer-events-auto cursor-pointer hover:ring-2 hover:ring-white/60 transition-all"
+                onClick={(e) => handleValueClick(e, "moment", moment.id, moment.magnitude)}
+                title="Değeri düzenlemek için tıklayın"
+              >
+                {moment.magnitude.toFixed(1)} kN·m
+              </span>
+            )}
             <div
               className={clsx(
                 "flex h-8 w-8 items-center justify-center rounded-full border-2 text-lg font-bold",
