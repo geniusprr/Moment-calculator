@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import math
+import warnings
 from time import perf_counter
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
+from numpy.exceptions import RankWarning
 
 from beam_solver_backend.schemas.beam import (
     AreaMethodVisualization,
@@ -272,6 +274,30 @@ def _determine_method_recommendation(payload: SolveRequest) -> MethodRecommendat
         udl.shape in ["triangular_increasing", "triangular_decreasing"] 
         for udl in payload.udls
     )
+    has_any_distributed = len(payload.udls) > 0
+
+    # Öncelik: Üçgen yayılı yük alan hesabını zorlaştırır → Kesit yöntemi öner
+    if has_triangular_distributed:
+        return MethodRecommendation(
+            method="shear",
+            title="Kesit Yöntemi",
+            reason=(
+                "Üçgen yayılı yükler kesme diyagramında parabolik alanlar oluşturur ve alan yönteminde "
+                "türev-integral hesaplarını zorlaştırır; kesit yöntemi her bölgeyi doğrudan kuvvet ve moment "
+                "dengeleriyle çözerek daha güvenilir ilerler."
+            ),
+        )
+
+    # Açılı (eksenel bileşenli) tekil yükler alan yaklaşımını karmaşıklaştırır
+    if has_axial_point:
+        return MethodRecommendation(
+            method="shear",
+            title="Kesit Yöntemi",
+            reason=(
+                "Açılı veya eksenel bileşenli tekil yükler kesme ve normal kuvvet diyagramlarını birlikte etkiler; "
+                "kesit yöntemi denge denklemleriyle bu etkileşimi daha net takip etmeye imkan tanır."
+            ),
+        )
     
     # Kural 1: Sadece tekil yükler varsa Alan yöntemi
     if has_point_loads and not payload.udls and not has_moments and not has_axial_point:
@@ -317,15 +343,162 @@ def _determine_method_recommendation(payload: SolveRequest) -> MethodRecommendat
             ),
         )
     
-    # Kural 5: Üçgen yayılı yük varsa veya diğer karmaşık durumlar için Kesme yöntemi
+    # Kural 5: Diğer tüm (sadece tekil/moment/yayılı kombinasyonları) için Alan yöntemi varsayılan
+    if has_point_loads or has_any_distributed or has_moments:
+        return MethodRecommendation(
+            method="area",
+            title="Alan Yöntemi",
+            reason=(
+                "Yükler yalnızca tekil kuvvetler, momentler ve düzgün yayılı yüklerden oluşuyor; kesme diyagramının "
+                "alanları üzerinden moment diyagramını çıkarmak hızlı ve görsel olarak takip edilebilir."
+            ),
+        )
+
+    # Varsayılan: yük yoksa alan yöntemi uygun
     return MethodRecommendation(
-        method="shear",
-        title="Kesme Yöntemi",
-        reason=(
-            "Üçgen yayılı yükler, açılı kuvvetler veya karmaşık yük kombinasyonları bulunduğundan moment "
-            "diyagramı parabolik/karmaşık davranır; kesme yöntemi bu tür durumlarda daha pratik ve hatasız ilerler."
-        ),
+        method="area",
+        title="Alan Yöntemi",
+        reason="Yük bulunmadığından alan yöntemiyle başlangıç koşulları korunur.",
     )
+
+
+def _collect_section_points(payload: SolveRequest) -> List[float]:
+    points = {0.0, payload.length}
+    for support in payload.supports:
+        points.add(float(support.position))
+    for load in payload.point_loads:
+        points.add(float(load.position))
+    for udl in payload.udls:
+        points.add(float(udl.start))
+        points.add(float(udl.end))
+    for moment_load in payload.moment_loads:
+        points.add(float(moment_load.position))
+    return sorted(points)
+
+
+def _format_number_for_text(value: float, precision: int = 4) -> str:
+    rounded = round(float(value), precision)
+    if abs(rounded) < 10 ** (-precision):
+        rounded = 0.0
+    text = f"{rounded:.{precision}f}"
+    text = text.rstrip("0").rstrip(".")
+    if text == "-0":
+        text = "0"
+    return text or "0"
+
+
+def _format_polynomial(coeffs: np.ndarray, variable: str = "x", precision: int = 4) -> str:
+    coeffs = np.array(coeffs, dtype=float)
+    degree = len(coeffs) - 1
+    terms: List[str] = []
+    for idx, coeff in enumerate(coeffs):
+        power = degree - idx
+        if abs(coeff) < 1e-8:
+            continue
+        coef_text = _format_number_for_text(coeff, precision)
+        if coef_text == "0":
+            continue
+        sign = "-" if coef_text.startswith("-") else "+"
+        coef_text = coef_text[1:] if coef_text.startswith("-") else coef_text
+        if power == 0:
+            term = coef_text
+        elif power == 1:
+            term = f"{coef_text}·{variable}"
+        else:
+            term = f"{coef_text}·{variable}^{power}"
+        terms.append((sign, term))
+
+    if not terms:
+        return "0"
+
+    first_sign, first_term = terms[0]
+    expression = ("- " if first_sign == "-" else "") + first_term
+    for sign, term in terms[1:]:
+        expression += f" {'-' if sign == '-' else '+'} {term}"
+    return expression
+
+
+def _fit_polynomial(x_vals: np.ndarray, y_vals: np.ndarray, max_degree: int) -> np.ndarray:
+    x = np.asarray(x_vals, dtype=float)
+    y = np.asarray(y_vals, dtype=float)
+    x_unique, unique_indices = np.unique(x, return_index=True)
+    y_unique = y[unique_indices]
+
+    degree = min(max_degree, len(x_unique) - 1)
+    if degree <= 0:
+        return np.array([float(y_unique[0])])
+    if degree == 1:
+        x0, x1 = x_unique[0], x_unique[-1]
+        if math.isclose(x1, x0, abs_tol=1e-9):
+            return np.array([0.0, float(y_unique[0])])
+        slope = (y_unique[-1] - y_unique[0]) / (x1 - x0)
+        intercept = y_unique[0] - slope * x0
+        return np.array([float(slope), float(intercept)])
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RankWarning)
+        coeffs = np.polyfit(x_unique, y_unique, degree)
+    return coeffs
+
+
+def _describe_region_loads(
+    payload: SolveRequest,
+    reactions: List[SupportReaction],
+    x_start: float,
+    x_end: float,
+) -> str:
+    entries: List[str] = []
+    for reaction in reactions:
+        if x_start - 1e-6 <= reaction.position <= x_end + 1e-6:
+            direction = "yukarı" if reaction.vertical >= 0 else "aşağı"
+            location = "sol sınır" if math.isclose(reaction.position, x_start, abs_tol=1e-6) else (
+                "sağ sınır" if math.isclose(reaction.position, x_end, abs_tol=1e-6) else "bölge içi"
+            )
+            entries.append(
+                f"• {reaction.support_id} mesnet reaksiyonu ({location}): R_{reaction.support_id} = {reaction.vertical:.2f} kN ({direction})"
+            )
+
+    for load in payload.point_loads:
+        if x_start - 1e-6 < load.position < x_end + 1e-6:
+            vertical = _vertical_component(load)
+            if abs(vertical) < 1e-6:
+                continue
+            direction = "aşağı" if vertical < 0 else "yukarı"
+            entries.append(
+                f"• x = {load.position:.2f} m noktasında {abs(vertical):.2f} kN {direction} tekil yük"
+            )
+
+    for udl in payload.udls:
+        overlap_start = max(x_start, udl.start)
+        overlap_end = min(x_end, udl.end)
+        if overlap_end - overlap_start <= 1e-6:
+            continue
+        direction = "aşağı" if udl.direction == "down" else "yukarı"
+        if udl.shape == "uniform":
+            shape_desc = "düzgün yayılı"
+        elif udl.shape == "triangular_increasing":
+            shape_desc = "hatlı (artarak) yayılı"
+        else:
+            shape_desc = "hatlı (azalarak) yayılı"
+        entries.append(
+            f"• {udl.start:.2f}-{udl.end:.2f} m aralığında {udl.magnitude:.2f} kN/m {direction} {shape_desc} yük (bu bölgede {overlap_start:.2f}-{overlap_end:.2f} m etkili)"
+        )
+
+    for moment_load in payload.moment_loads:
+        if x_start - 1e-6 < moment_load.position < x_end + 1e-6:
+            direction = "saat yönü" if moment_load.direction == "cw" else "saat yönünün tersi"
+            entries.append(
+                f"• x = {moment_load.position:.2f} m noktasında {moment_load.magnitude:.2f} kN·m {direction} uygulanan çift"
+            )
+
+    if not entries:
+        return "Bu aralıkta harici yük bulunmuyor; kesitteki iç kuvvetler sabit kalır."
+
+    return "Bölge içeriği:\n" + "\n".join(entries)
+
+
+def _format_interval(start: float, end: float, variable: str = "x") -> str:
+    return f"{_format_number_for_text(start, 3)} ≤ {variable} ≤ {_format_number_for_text(end, 3)}"
 
 
 def _moment_sign(direction: MomentDirection) -> float:
@@ -699,7 +872,7 @@ def _generate_equilibrium_method(
     )
 
 
-def _generate_integration_method(
+def _generate_section_method(
     payload: SolveRequest,
     reactions: List[SupportReaction],
     shear: np.ndarray,
@@ -707,7 +880,341 @@ def _generate_integration_method(
     x_axis: np.ndarray,
     moment_extrema: Dict[str, Optional[MomentCandidate]],
 ) -> SolutionMethod:
-    """Generate detailed integration method solution steps."""
+    regions_points = _collect_section_points(payload)
+    regions: List[Tuple[float, float]] = []
+    for left, right in zip(regions_points[:-1], regions_points[1:]):
+        if right - left > 1e-9:
+            regions.append((left, right))
+
+    steps: List[SolutionStep] = []
+    step_number = 1
+
+    idea_explanation = (
+        "KESME (KESİT) YÖNTEMİ – TEMEL FİKİR\n\n"
+        "• Kirişin ilgilendiğimiz bir noktasında hayali bir kesit açarız.\n"
+        "• Kesitte doğan iç kuvvetleri N(z), T(z), M(z) bilinmeyen olarak kabul ederiz.\n"
+        "• Kestiğimiz parçanın serbest cisim diyagramını çizip sadece ΣF = 0 ve ΣM = 0 denklemlerini kullanırız.\n"
+    )
+    steps.append(
+        SolutionStep(
+            step_number=step_number,
+            title="Yöntemin Fikri",
+            explanation=idea_explanation,
+        )
+    )
+    step_number += 1
+
+    sign_explanation = (
+        "İŞARET KABULLERİ (TUTARLI KULLANILMALI)\n\n"
+        "• Kesme kuvveti T: Sol yüzeyde yukarı (sağ yüzeyde aşağı) pozitif.\n"
+        "• Moment M: Kirişi güldüren (alt lifte çekme) pozitif.\n"
+        "• Eksenel kuvvet N: Çekme pozitif (bu örnekte düşey yüklerden ötürü genellikle N = 0)."
+    )
+    steps.append(
+        SolutionStep(
+            step_number=step_number,
+            title="Pozitif Yön Kabulleri",
+            explanation=sign_explanation,
+        )
+    )
+    step_number += 1
+
+    algorithm_explanation = (
+        "GENEL AKIŞ\n\n"
+        "1) Yük durumunun değiştiği her aralık için ayrı bölge oluştur.\n"
+        "2) Her bölge için koordinatı, sol sınırdan itibaren tanımla (z artan yönde sağa gider).\n"
+        "3) Serbest cisim diyagramını çiz; yayılı yükleri eşdeğer kuvvetle göster.\n"
+        "4) ΣFy = 0 denklemi ile T(z), ΣM = 0 denklemi ile M(z) fonksiyonlarını çıkar.\n"
+        "5) Bölge sınırlarında kesme ve moment sürekliliğini kontrol et, sıçramaları noktasal yük/momentlerle eşleştir."
+    )
+    steps.append(
+        SolutionStep(
+            step_number=step_number,
+            title="Genel Adımlar",
+            explanation=algorithm_explanation,
+        )
+    )
+    step_number += 1
+
+    region_summaries: List[str] = []
+    for index, (start, end) in enumerate(regions, start=1):
+        summary = _describe_region_loads(payload, reactions, start, end)
+        region_summaries.append(
+            f"Bölge {index}: {_format_interval(start, end, 'z')}\n{summary}\n"
+        )
+
+    region_summary_text = (
+        f"KİRİŞ {len(regions)} BÖLGEYE AYRILIR\n\n" + "\n".join(region_summaries)
+        if region_summaries
+        else "Bu yükleme ile kiriş tek bir bölgeden oluşuyor."
+    )
+    steps.append(
+        SolutionStep(
+            step_number=step_number,
+            title="Bölge Tanımları",
+            explanation=region_summary_text,
+        )
+    )
+    step_number += 1
+
+    shear_zero_points: List[float] = []
+    moment_zero_points: List[float] = []
+    region_formulas: List[dict] = []
+
+    def _ensure_region_samples(x_start: float, x_end: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        mask = (x_axis >= x_start - 1e-9) & (x_axis <= x_end + 1e-9)
+        region_x = x_axis[mask]
+        region_shear = shear[mask]
+        region_moment = moment[mask]
+
+        if region_x.size == 0 or not math.isclose(region_x[0], x_start, abs_tol=1e-9):
+            shear_start = float(np.interp(x_start, x_axis, shear))
+            moment_start = float(np.interp(x_start, x_axis, moment))
+            region_x = np.insert(region_x, 0, x_start)
+            region_shear = np.insert(region_shear, 0, shear_start)
+            region_moment = np.insert(region_moment, 0, moment_start)
+
+        if region_x[-1] < x_end - 1e-9:
+            shear_end = float(np.interp(x_end, x_axis, shear))
+            moment_end = float(np.interp(x_end, x_axis, moment))
+            region_x = np.append(region_x, x_end)
+            region_shear = np.append(region_shear, shear_end)
+            region_moment = np.append(region_moment, moment_end)
+
+        unique_x, indices = np.unique(region_x, return_index=True)
+        region_x = unique_x
+        region_shear = region_shear[indices]
+        region_moment = region_moment[indices]
+        return region_x, region_shear, region_moment
+
+    for idx, (start, end) in enumerate(regions, start=1):
+        region_x, region_shear, region_moment = _ensure_region_samples(start, end)
+        shear_coeffs = _fit_polynomial(region_x, region_shear, max_degree=2)
+        shear_poly = np.poly1d(shear_coeffs)
+        moment_poly = np.polyint(shear_poly)
+
+        moment_start_val = float(np.interp(start, x_axis, moment))
+        constant_shift = moment_start_val - float(moment_poly(start))
+        moment_poly = moment_poly + constant_shift
+        moment_coeffs = moment_poly.coeffs
+
+        shear_expression = _format_polynomial(shear_coeffs, variable="z")
+        moment_expression = _format_polynomial(moment_coeffs, variable="z")
+
+        local_shear_roots: List[float] = []
+        if len(shear_coeffs) > 1:
+            for root in np.roots(shear_coeffs):
+                if abs(root.imag) < 1e-6:
+                    value = float(root.real)
+                    if start - 1e-6 <= value <= end + 1e-6:
+                        local_shear_roots.append(value)
+                        shear_zero_points.append(value)
+
+        local_moment_roots: List[float] = []
+        if len(moment_coeffs) > 1:
+            for root in np.roots(moment_coeffs):
+                if abs(root.imag) < 1e-6:
+                    value = float(root.real)
+                    if start - 1e-6 <= value <= end + 1e-6:
+                        local_moment_roots.append(value)
+                        moment_zero_points.append(value)
+
+        shear_end_val = float(shear_poly(end))
+        moment_end_val = float(moment_poly(end))
+
+        bullets: List[str] = [
+            f"ΣFy = 0 ⇒ T_{idx}(z) = {shear_expression} [kN]",
+            f"ΣM_kesit = 0 ⇒ M_{idx}(z) = {moment_expression} [kN·m]",
+        ]
+
+        if local_shear_roots:
+            zero_lines = []
+            for value in sorted(local_shear_roots):
+                moment_at_zero = float(moment_poly(value))
+                zero_lines.append(
+                    f"z = {value:.4f} m → T = 0 ⇒ M = {moment_at_zero:.2f} kN·m"
+                )
+            bullets.append("Kesme sıfır noktaları:\n" + "\n".join(f"• {line}" for line in zero_lines))
+
+        if local_moment_roots:
+            zero_lines = [f"• z = {value:.4f} m" for value in sorted(local_moment_roots)]
+            bullets.append("Moment sıfır noktaları:\n" + "\n".join(zero_lines))
+
+        bullets.append(
+            f"Bölge sonu değerleri: T(z={end:.4f} m) = {shear_end_val:.2f} kN, M(z={end:.4f} m) = {moment_end_val:.2f} kN·m"
+        )
+
+        explanation_text = (
+            f"Bölge {idx}: {_format_interval(start, end, 'z')}\n"
+            f"{_describe_region_loads(payload, reactions, start, end)}\n\n"
+            "KESİT DENKLEMLERİ\n"
+            + "\n".join(bullets)
+        )
+
+        steps.append(
+            SolutionStep(
+                step_number=step_number,
+                title=f"Bölge {idx}: Kesit Denklemleri",
+                explanation=explanation_text,
+                numerical_result=f"T(z={end:.2f} m) = {shear_end_val:.2f} kN, M(z={end:.2f} m) = {moment_end_val:.2f} kN·m",
+                beam_section=BeamSectionHighlight(
+                    start=_format_float(start),
+                    end=_format_float(end),
+                    label=f"Bölge {idx}",
+                ),
+            )
+        )
+        step_number += 1
+
+        region_formulas.append(
+            {
+                "start": start,
+                "end": end,
+                "shear_expression": shear_expression,
+                "moment_expression": moment_expression,
+                "variable": "z",
+            }
+        )
+
+    important_lines: List[str] = []
+    if shear_zero_points:
+        unique_points = sorted({round(val, 6) for val in shear_zero_points})
+        for value in unique_points:
+            moment_value = float(np.interp(value, x_axis, moment))
+            important_lines.append(
+                f"• T = 0 ⇒ z = {value:.4f} m → M = {moment_value:.2f} kN·m"
+            )
+    if moment_zero_points:
+        unique_points = sorted({round(val, 6) for val in moment_zero_points})
+        for value in unique_points:
+            important_lines.append(f"• M = 0 ⇒ z = {value:.4f} m")
+
+    max_positive = moment_extrema.get("max_positive") if moment_extrema else None
+    min_negative = moment_extrema.get("min_negative") if moment_extrema else None
+    max_absolute = moment_extrema.get("max_absolute") if moment_extrema else None
+
+    if max_positive is not None:
+        important_lines.append(
+            f"• Pozitif maksimum moment: M = {max_positive[1]:.2f} kN·m (z = {max_positive[0]:.2f} m)"
+        )
+    if min_negative is not None:
+        important_lines.append(
+            f"• Negatif maksimum (minimum) moment: M = {min_negative[1]:.2f} kN·m (z = {min_negative[0]:.2f} m)"
+        )
+    if max_absolute is not None:
+        important_lines.append(
+            f"• Mutlak değerce kritik moment: |M| = {abs(max_absolute[1]):.2f} kN·m (z = {max_absolute[0]:.2f} m)"
+        )
+
+    important_text = (
+        "ÖNEMLİ SAYISAL NOKTALAR\n\n" + "\n".join(important_lines)
+        if important_lines
+        else "Kesme veya moment diyagramında özel bir kritik nokta oluşmadı."
+    )
+
+    steps.append(
+        SolutionStep(
+            step_number=step_number,
+            title="Önemli Noktalar",
+            explanation=important_text,
+        )
+    )
+    step_number += 1
+
+    piecewise_lines: List[str] = []
+    for data in region_formulas:
+        variable_name = data.get('variable', 'x')
+        piecewise_lines.append(
+            f"• {_format_interval(data['start'], data['end'], variable_name)}:\n  T({variable_name}) = {data['shear_expression']}\n  M({variable_name}) = {data['moment_expression']}"
+        )
+
+    summary_text = (
+        "PARÇALI FONKSİYONLAR\n\nKesme kuvveti ve moment denklemleri, her bölge için aşağıdaki gibidir:\n"
+        + "\n".join(piecewise_lines)
+        if piecewise_lines
+        else "Kiriş tek bölgede çözüldü; fonksiyonlar sabit."
+    )
+
+    steps.append(
+        SolutionStep(
+            step_number=step_number,
+            title="Fonksiyonların Toplanması",
+            explanation=summary_text,
+        )
+    )
+    step_number += 1
+
+    diagram_explanation = (
+        "DİYAGRAM İPUÇLARI\n\n"
+        "• Yayılı yük bulunan bölgelerde kesme diyagramı eğimli (lineer/kuadratik), moment diyagramı parabolik/kübik olur.\n"
+        "• Kesme diyagramındaki pozitif eğim moment artışını, negatif eğim moment azalışını gösterir.\n"
+        "• Noktasal yükler T diyagramında yük büyüklüğü kadar sıçrama yapar; moment diyagramında süreklilik korunur.\n"
+        "• Uygulanan çiftler (momentler) M diyagramında anlık atlama yaratır, T diyagramını etkilemez."
+    )
+    steps.append(
+        SolutionStep(
+            step_number=step_number,
+            title="Çizim İpuçları",
+            explanation=diagram_explanation,
+        )
+    )
+    step_number += 1
+
+    mistakes_explanation = (
+        "SIK YAPILAN HATALAR\n\n"
+        "1) İşaret karıştırmak: Pozitif kesme/moment kabulünü her bölgede aynı tut.\n"
+        "2) Yayılı yükün eşdeğer moment kolunu unutmak: w·z kuvveti, bölge uzunluğunun yarısında etkir.\n"
+        "3) Bölge aralıklarını yazmamak: Her formülün hangi z aralığında geçerli olduğunu belirt.\n"
+        "4) Çift etkisini atlamak: Uygulanan çift M diyagramında atlama oluşturur, T sabit kalır.\n"
+        "5) Kontrol yapmamak: T alanının M değişimine eşit olduğunu ve sınır koşullarını doğrula."
+    )
+    steps.append(
+        SolutionStep(
+            step_number=step_number,
+            title="Sık Yapılan Hatalar",
+            explanation=mistakes_explanation,
+        )
+    )
+    step_number += 1
+
+    recap_explanation = (
+        "HIZLI ÖZET\n\n"
+        "1) Bölge seç, z'yi tanımla.\n"
+        "2) Serbest cisim diyagramı + ΣF, ΣM denklemleri ile T(z), M(z) bul.\n"
+        "3) Bölge sınırlarında süreklilik/atlamaları kontrol et.\n"
+        "4) Kritik noktaları (T=0, M=0) işaretle.\n"
+        "5) Diyagramı çiz, sonuçları mesnet ve yük koşullarıyla doğrula."
+    )
+    steps.append(
+        SolutionStep(
+            step_number=step_number,
+            title="Kısa Özet",
+            explanation=recap_explanation,
+        )
+    )
+
+    description = (
+        "Kesit yöntemi, her bölge için serbest cisim diyagramı kurup ΣF ve ΣM denklemlerinden doğrudan T(x) ve M(x)"
+        " fonksiyonlarını çıkarır. Dört işlemle ilerleyen klasik mukavemet yaklaşımıdır."
+    )
+
+    return SolutionMethod(
+        method_name="shear",
+        method_title="Kesme (Kesit) Yöntemi",
+        description=description,
+        steps=steps,
+    )
+
+
+def _generate_differential_method(
+    payload: SolveRequest,
+    reactions: List[SupportReaction],
+    shear: np.ndarray,
+    moment: np.ndarray,
+    x_axis: np.ndarray,
+    moment_extrema: Dict[str, Optional[MomentCandidate]],
+) -> SolutionMethod:
+    """Generate detailed differential (dM/dx) method solution steps."""
     steps: List[SolutionStep] = []
     supports_sorted = sorted(payload.supports, key=lambda s: s.position)
     support_a, support_b = supports_sorted
@@ -951,10 +1458,9 @@ def _generate_integration_method(
     )
 
     return SolutionMethod(
-        method_name="shear",
-        method_title="Kesme Yöntemi",
-        description="Kesme kuvveti grafiği bölgelere ayrılır. Her bölgede: Moment Değişimi = Kesme × Mesafe formülü kullanılır. Basit ve pratik bir yöntemdir.",
-        recommendation_reason="Kesme diyagramındaki değerlerle momenti hızlı ve doğrudan hesapladığı için günlük mühendislik hesaplarında pratik bir yaklaşımdır.",
+        method_name="differential",
+        method_title="Diferansiyel (dM/dx) Yaklaşımı",
+        description="Kesme diyagramını (T) kullanarak moment diyagramını sayısal integrasyonla elde eder. Trapez kuralı ile dM/dx = T bağıntısını uygular.",
         steps=steps,
     )
 
@@ -1272,11 +1778,11 @@ def _generate_detailed_solutions(
     moment_extrema: Dict[str, Optional[MomentCandidate]],
 ) -> DetailedSolution:
     """Generate all detailed solution methods."""
-    from ..schemas.beam import DiagramData
-    
+
     methods = [
         _generate_equilibrium_method(payload, reactions),
-        _generate_integration_method(payload, reactions, shear, moment, x_axis, moment_extrema),
+        _generate_section_method(payload, reactions, shear, moment, x_axis, moment_extrema),
+        _generate_differential_method(payload, reactions, shear, moment, x_axis, moment_extrema),
         _generate_area_method(payload, shear, moment, x_axis),
     ]
 

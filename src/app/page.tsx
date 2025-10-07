@@ -2,7 +2,7 @@
 
 import clsx from "clsx";
 import Image from "next/image";
-import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import { ChangeEvent, useCallback, useEffect, useMemo, useState, useTransition } from "react";
 
 import { BeamDiagrams } from "@/components/BeamDiagrams";
 import { BeamForm } from "@/components/BeamForm";
@@ -287,6 +287,19 @@ export default function HomePage() {
     setActivePreset(preset.key);
     setPendingPresetKey(preset.key);
   }, []);
+
+  const handlePresetChange = useCallback(
+    (event: ChangeEvent<HTMLSelectElement>) => {
+      const selected = PRESETS.find((preset) => preset.key === event.target.value);
+      if (selected) {
+        applyPreset(selected);
+      }
+    },
+    [applyPreset],
+  );
+
+  const selectedPreset = useMemo(() => PRESETS.find((preset) => preset.key === activePreset) ?? null, [activePreset]);
+  const presetSelectValue = selectedPreset?.key ?? "custom";
 
   const handleReset = useCallback(() => {
     applyPreset(DEFAULT_PRESET);
@@ -814,42 +827,44 @@ export default function HomePage() {
         </div>
       </header>
 
-      <div className="mx-auto flex w-full max-w-none flex-col gap-5 px-4 pt-4 sm:px-6">
-        <section className="panel space-y-3 p-3 sm:p-4">
-          <div className="flex items-center justify-between">
-            <span className="tag">Ön Ayarlar</span>
-            <button
-              type="button"
-              onClick={handleReset}
-              className="rounded-full border border-slate-700/70 px-3 py-1 text-xs text-slate-300 transition hover:border-slate-500 hover:text-white"
-            >
-              Varsayılana sıfırla
-            </button>
-          </div>
-          <div className="flex flex-col gap-2 md:flex-row md:flex-wrap">
-            {PRESETS.map((preset) => (
-              <button
-                key={preset.key}
-                type="button"
-                onClick={() => applyPreset(preset)}
-                className={clsx(
-                  "flex-1 rounded-xl border px-3 py-2 text-left transition",
-                  activePreset === preset.key
-                    ? "border-cyan-400 bg-cyan-500/10"
-                    : "border-slate-700/80 bg-slate-900/60 hover:border-cyan-400",
-                )}
-              >
-                <p className="text-xs font-semibold text-slate-100">{preset.title}</p>
-                <p className="text-xs text-slate-400">{preset.description}</p>
-              </button>
-            ))}
-          </div>
-        </section>
-
-        {/* BeamSketch moved into center column to sit between model and results */}
-
+      <div className="mx-auto flex w-full max-w-none flex-col gap-4 px-4 pt-4 sm:px-6">
         <div className="grid gap-6 xl:grid-cols-[380px_minmax(0,1fr)_380px]">
           <div className="space-y-6">
+            <section className="panel space-y-3 p-3 sm:p-4">
+              <div className="flex items-center justify-between gap-2">
+                <span className="tag">Ön Ayarlar</span>
+                <button
+                  type="button"
+                  onClick={handleReset}
+                  className="rounded-full border border-slate-700/70 px-3 py-1 text-xs text-slate-300 transition hover:border-slate-500 hover:text-white"
+                >
+                  Varsayılana sıfırla
+                </button>
+              </div>
+              <div className="space-y-2">
+                <label htmlFor="preset-select" className="text-xs font-semibold text-slate-300">
+                  Hazır şablon seçin
+                </label>
+                <select
+                  id="preset-select"
+                  value={presetSelectValue}
+                  onChange={handlePresetChange}
+                  className="w-full rounded-lg border border-slate-700/80 bg-slate-900/70 px-3 py-2 text-sm text-slate-100 transition focus:border-cyan-400 focus:outline-none focus:ring-1 focus:ring-cyan-400"
+                >
+                  <option value="custom" disabled={!!selectedPreset}>
+                    Özel yapılandırma
+                  </option>
+                  {PRESETS.map((preset) => (
+                    <option key={preset.key} value={preset.key}>
+                      {preset.title}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-slate-400">
+                  {selectedPreset ? selectedPreset.description : "Parametrelerinizi özelleştirdiniz."}
+                </p>
+              </div>
+            </section>
             <BeamForm
               length={length}
               onLengthChange={setLengthAndClear}

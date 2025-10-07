@@ -39,7 +39,13 @@ interface DragState {
   type: "support" | "point" | "moment" | "udl-start" | "udl-end" | "udl-center";
   id: string;
   pointerId: number;
+  offset: number;
 }
+
+type DragTarget = {
+  type: DragState["type"];
+  id: string;
+};
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
@@ -98,29 +104,40 @@ export function BeamSketch({
   );
 
   const applyPosition = useCallback(
-    (target: DragState | null, value: number) => {
+    (target: DragState | null, pointerValue: number) => {
       if (!target) {
         return;
       }
-      // Ensure supports cannot exceed beam length (0 to beamLength)
-      const safe = clamp(value, 0, beamLength);
+
+      const snap = (value: number) => Math.round(value * 100) / 100;
+      const desired = pointerValue - target.offset;
+
       switch (target.type) {
-        case "support":
-          onSupportPositionChange(target.id, safe);
+        case "support": {
+          const safe = clamp(desired, 0, beamLength);
+          onSupportPositionChange(target.id, snap(safe));
           break;
-        case "point":
-          onPointLoadPositionChange(target.id, safe);
+        }
+        case "point": {
+          const safe = clamp(desired, 0, beamLength);
+          onPointLoadPositionChange(target.id, snap(safe));
           break;
-        case "moment":
-          onMomentPositionChange(target.id, safe);
+        }
+        case "moment": {
+          const safe = clamp(desired, 0, beamLength);
+          onMomentPositionChange(target.id, snap(safe));
           break;
+        }
         case "udl-start": {
           const udl = udls.find((item) => item.id === target.id);
           if (!udl) {
             return;
           }
-          const nextStart = Math.min(safe, udl.end - 0.1);
-          onUdlRangeChange(target.id, "start", clamp(nextStart, 0, beamLength));
+          const safe = clamp(desired, 0, beamLength);
+          const maxStart = udl.end - 0.1;
+          const constrained = Math.min(safe, maxStart);
+          const snapped = Math.min(snap(constrained), maxStart);
+          onUdlRangeChange(target.id, "start", clamp(snapped, 0, beamLength - 0.1));
           break;
         }
         case "udl-end": {
@@ -128,8 +145,11 @@ export function BeamSketch({
           if (!udl) {
             return;
           }
-          const nextEnd = Math.max(safe, udl.start + 0.1);
-          onUdlRangeChange(target.id, "end", clamp(nextEnd, 0, beamLength));
+          const safe = clamp(desired, 0, beamLength);
+          const minEnd = udl.start + 0.1;
+          const constrained = Math.max(safe, minEnd);
+          const snapped = Math.max(snap(constrained), minEnd);
+          onUdlRangeChange(target.id, "end", clamp(snapped, minEnd, beamLength));
           break;
         }
         case "udl-center": {
@@ -137,14 +157,41 @@ export function BeamSketch({
           if (!udl) {
             return;
           }
-          // Move entire UDL span keeping its length
           const span = Math.max(udl.end - udl.start, 0.1);
           const half = span / 2;
-          const mid = clamp(safe, half, beamLength - half);
-          const nextStart = clamp(mid - half, 0, beamLength - 0.1);
-          const nextEnd = clamp(mid + half, nextStart + 0.1, beamLength);
-          onUdlRangeChange(target.id, "start", nextStart);
-          onUdlRangeChange(target.id, "end", nextEnd);
+          const rawMid = clamp(desired, half, beamLength - half);
+          const snappedMid = clamp(snap(rawMid), half, beamLength - half);
+          let nextStart = snappedMid - half;
+          let nextEnd = snappedMid + half;
+
+          if (nextStart < 0) {
+            nextStart = 0;
+            nextEnd = span;
+          }
+          if (nextEnd > beamLength) {
+            nextEnd = beamLength;
+            nextStart = beamLength - span;
+          }
+
+          let snappedStart = snap(nextStart);
+          let snappedEnd = snap(nextEnd);
+          const desiredSpan = Math.max(0.1, snap(span));
+
+          if (snappedEnd - snappedStart < 0.1) {
+            snappedStart = clamp(snappedMid - desiredSpan / 2, 0, beamLength - desiredSpan);
+            snappedStart = snap(snappedStart);
+            snappedEnd = snap(Math.min(snappedStart + desiredSpan, beamLength));
+          }
+
+          if (snappedEnd - snappedStart < 0.1) {
+            snappedEnd = snap(Math.min(beamLength, snappedStart + 0.1));
+          }
+
+          snappedStart = clamp(snappedStart, 0, beamLength - 0.1);
+          snappedEnd = clamp(snappedEnd, snappedStart + 0.1, beamLength);
+
+          onUdlRangeChange(target.id, "start", snappedStart);
+          onUdlRangeChange(target.id, "end", snappedEnd);
           break;
         }
       }
@@ -183,15 +230,57 @@ export function BeamSketch({
     };
   }, [applyPosition, dragState, valueFromPointer]);
 
+  const resolveCurrentPosition = useCallback(
+    (target: DragTarget): number => {
+      switch (target.type) {
+        case "support": {
+          const support = supports.find((item) => item.id === target.id);
+          return support ? support.position : 0;
+        }
+        case "point": {
+          const load = pointLoads.find((item) => item.id === target.id);
+          return load ? load.position : 0;
+        }
+        case "moment": {
+          const moment = momentLoads.find((item) => item.id === target.id);
+          return moment ? moment.position : 0;
+        }
+        case "udl-start": {
+          const udl = udls.find((item) => item.id === target.id);
+          return udl ? udl.start : 0;
+        }
+        case "udl-end": {
+          const udl = udls.find((item) => item.id === target.id);
+          return udl ? udl.end : 0;
+        }
+        case "udl-center": {
+          const udl = udls.find((item) => item.id === target.id);
+          if (!udl) {
+            return 0;
+          }
+          return (udl.start + udl.end) / 2;
+        }
+        default:
+          return 0;
+      }
+    },
+    [momentLoads, pointLoads, supports, udls],
+  );
+
   const beginDrag = useCallback(
-    (target: DragState) => (event: React.PointerEvent<HTMLDivElement | HTMLButtonElement>) => {
+    (target: DragTarget) => (event: React.PointerEvent<HTMLDivElement | HTMLButtonElement>) => {
       event.preventDefault();
       event.stopPropagation();
-      const value = valueFromPointer(event.clientX);
-      applyPosition(target, value);
-      setDragState({ ...target, pointerId: event.pointerId });
+
+      const pointerValue = valueFromPointer(event.clientX);
+      const currentValue = resolveCurrentPosition(target);
+      const offset = pointerValue - currentValue;
+      const state: DragState = { ...target, pointerId: event.pointerId, offset };
+
+      setDragState(state);
+      applyPosition(state, pointerValue);
     },
-    [applyPosition, valueFromPointer],
+    [applyPosition, resolveCurrentPosition, valueFromPointer],
   );
 
   const openContextMenu = useCallback(
@@ -219,7 +308,7 @@ export function BeamSketch({
 
   const handleValueInputBlur = useCallback(() => {
     if (!editingValue) return;
-    
+
     const numValue = parseFloat(editingValue.value);
     if (!isNaN(numValue) && numValue > 0) {
       switch (editingValue.type) {
@@ -334,7 +423,7 @@ export function BeamSketch({
           >
             <div
               className="cursor-ew-resize"
-              onPointerDown={beginDrag({ type: "support", id: support.id, pointerId: 0 })}
+              onPointerDown={beginDrag({ type: "support", id: support.id })}
               title={support.reaction ? `Düşey=${support.reaction.vertical.toFixed(2)} kN${Math.abs(support.reaction.axial) > 1e-3 ? `, Yatay=${support.reaction.axial.toFixed(2)} kN` : ""}` : ""}
             >
               {/* Larger support symbol */}
@@ -352,7 +441,7 @@ export function BeamSketch({
             className="absolute flex translate-x-[-50%] flex-col items-center cursor-ew-resize z-40"
             style={{ left: `${2 + (load.percent * 0.96)}%`, bottom: 'calc(50% + 18px)' }}
             onContextMenu={(event) => openContextMenu(event, { kind: "point", id: load.id, x: load.position })}
-            onPointerDown={beginDrag({ type: "point", id: load.id, pointerId: 0 })}
+            onPointerDown={beginDrag({ type: "point", id: load.id })}
           >
             {editingValue?.type === "pointLoad" && editingValue.id === load.id ? (
               <input
@@ -367,7 +456,7 @@ export function BeamSketch({
                 onPointerDown={(e) => e.stopPropagation()}
               />
             ) : (
-              <span 
+              <span
                 className="mb-0.5 rounded bg-red-500/90 px-1.5 py-0.5 text-xs font-semibold text-white cursor-pointer hover:ring-2 hover:ring-white/60 transition-all pointer-events-auto"
                 onClick={(e) => handleValueClick(e, "pointLoad", load.id, load.magnitude)}
                 title="Değeri düzenlemek için tıklayın"
@@ -455,7 +544,7 @@ export function BeamSketch({
                     onPointerDown={(e) => e.stopPropagation()}
                   />
                 ) : (
-                  <span 
+                  <span
                     className="rounded bg-orange-600/90 px-2 py-0.5 text-xs font-semibold text-white cursor-pointer hover:ring-2 hover:ring-white/60 transition-all"
                     onClick={(e) => handleValueClick(e, "udl", load.id, load.magnitude)}
                     title="Değeri düzenlemek için tıklayın"
@@ -496,7 +585,7 @@ export function BeamSketch({
 
               <div
                 className="absolute inset-0 cursor-grab transition hover:opacity-90"
-                onPointerDown={beginDrag({ type: "udl-center", id: load.id, pointerId: 0 })}
+                onPointerDown={beginDrag({ type: "udl-center", id: load.id })}
                 title="Yayılı yükü sürükle"
               >
                 {arrowPositions.map((position, index) => {
@@ -540,14 +629,14 @@ export function BeamSketch({
               <div
                 className="absolute z-40 w-8 translate-x-[-50%] cursor-ew-resize"
                 style={{ left: "0%", top: "8px", height: `${UDL_AREA_HEIGHT - 16}px` }}
-                onPointerDown={beginDrag({ type: "udl-start", id: load.id, pointerId: 0 })}
+                onPointerDown={beginDrag({ type: "udl-start", id: load.id })}
                 title="Yayılı yük başlangıcını sürükle"
               />
 
               <div
                 className="absolute z-40 w-8 translate-x-[-50%] cursor-ew-resize"
                 style={{ left: "100%", top: "8px", height: `${UDL_AREA_HEIGHT - 16}px` }}
-                onPointerDown={beginDrag({ type: "udl-end", id: load.id, pointerId: 0 })}
+                onPointerDown={beginDrag({ type: "udl-end", id: load.id })}
                 title="Yayılı yük bitişini sürükle"
               />
             </div>
@@ -561,7 +650,7 @@ export function BeamSketch({
             className="absolute flex translate-x-[-50%] flex-col items-center gap-1 cursor-ew-resize z-40"
             style={{ left: `${2 + (moment.percent * 0.96)}%`, bottom: 'calc(50% + 21px)' }}
             onContextMenu={(event) => openContextMenu(event, { kind: "moment", id: moment.id, x: moment.position })}
-            onPointerDown={beginDrag({ type: "moment", id: moment.id, pointerId: 0 })}
+            onPointerDown={beginDrag({ type: "moment", id: moment.id })}
           >
             {editingValue?.type === "moment" && editingValue.id === moment.id ? (
               <input
@@ -576,7 +665,7 @@ export function BeamSketch({
                 onPointerDown={(e) => e.stopPropagation()}
               />
             ) : (
-              <span 
+              <span
                 className="rounded bg-slate-800/90 px-2 py-0.5 text-xs font-semibold text-slate-200 pointer-events-auto cursor-pointer hover:ring-2 hover:ring-white/60 transition-all"
                 onClick={(e) => handleValueClick(e, "moment", moment.id, moment.magnitude)}
                 title="Değeri düzenlemek için tıklayın"
