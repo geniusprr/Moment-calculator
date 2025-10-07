@@ -83,6 +83,13 @@ export interface BeamMomentLoadInfo {
   direction: MomentDirection;
 }
 
+export interface LoadColorConfig {
+  point: string;
+  uniformUdl: string;
+  triangularUdl: string;
+  moment: string;
+}
+
 export interface BeamContext {
   length: number;
   supports: BeamSupportInfo[];

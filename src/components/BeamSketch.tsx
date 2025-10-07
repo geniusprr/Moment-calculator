@@ -1,7 +1,6 @@
 "use client";
 
 import { CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import clsx from "clsx";
 
 import type {
   MomentLoadInput,
@@ -9,6 +8,7 @@ import type {
   SupportInput,
   SupportReaction,
   UdlInput,
+  LoadColorConfig,
 } from "@/types/beam";
 
 export type SketchContextTarget =
@@ -25,6 +25,7 @@ interface BeamSketchProps {
   udls: UdlInput[];
   momentLoads: MomentLoadInput[];
   reactions?: SupportReaction[];
+  loadColors?: Partial<LoadColorConfig>;
   onSupportPositionChange: (id: string, position: number) => void;
   onPointLoadPositionChange: (id: string, position: number) => void;
   onUdlRangeChange: (id: string, edge: "start" | "end", position: number) => void;
@@ -49,6 +50,72 @@ type DragTarget = {
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
+const DEFAULT_LOAD_COLORS: LoadColorConfig = {
+  point: "#ef4444",
+  uniformUdl: "#f97316",
+  triangularUdl: "#a855f7",
+  moment: "#22c55e",
+};
+
+const parseHex = (color: string): [number, number, number] | null => {
+  const value = color.trim();
+  if (!value.startsWith("#")) {
+    return null;
+  }
+  const hex = value.slice(1);
+  if (hex.length === 3) {
+    const r = parseInt(hex[0] + hex[0], 16);
+    const g = parseInt(hex[1] + hex[1], 16);
+    const b = parseInt(hex[2] + hex[2], 16);
+    return [r, g, b];
+  }
+  if (hex.length === 6) {
+    const r = parseInt(hex.slice(0, 2), 16);
+    const g = parseInt(hex.slice(2, 4), 16);
+    const b = parseInt(hex.slice(4, 6), 16);
+    return [r, g, b];
+  }
+  return null;
+};
+
+const applyAlpha = (color: string, alpha: number): string => {
+  const rgb = parseHex(color);
+  if (!rgb) {
+    return color;
+  }
+  const [r, g, b] = rgb;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
+
+const mixColors = (color: string, mixWith: string, amount: number): string => {
+  const base = parseHex(color);
+  const mix = parseHex(mixWith);
+  if (!base || !mix) {
+    return color;
+  }
+  const clampAmount = clamp(amount, 0, 1);
+  const r = Math.round(base[0] * (1 - clampAmount) + mix[0] * clampAmount);
+  const g = Math.round(base[1] * (1 - clampAmount) + mix[1] * clampAmount);
+  const b = Math.round(base[2] * (1 - clampAmount) + mix[2] * clampAmount);
+  return `#${[r, g, b]
+    .map((component) => component.toString(16).padStart(2, "0"))
+    .join("")}`;
+};
+
+const getReadableTextColor = (color: string): string => {
+  const rgb = parseHex(color);
+  if (!rgb) {
+    return "#f8fafc";
+  }
+  const toLinear = (value: number) => {
+    const channel = value / 255;
+    return channel <= 0.03928 ? channel / 12.92 : Math.pow((channel + 0.055) / 1.055, 2.4);
+  };
+  const [r, g, b] = rgb.map(toLinear) as [number, number, number];
+  const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  return luminance > 0.55 ? "#0f172a" : "#f8fafc";
+};
+
 export function BeamSketch({
   length,
   supports,
@@ -56,6 +123,7 @@ export function BeamSketch({
   udls,
   momentLoads,
   reactions,
+  loadColors,
   onSupportPositionChange,
   onPointLoadPositionChange,
   onUdlRangeChange,
@@ -74,6 +142,13 @@ export function BeamSketch({
   } | null>(null);
 
   const beamLength = Math.max(length, 1e-4);
+
+  const colors = useMemo(() => ({ ...DEFAULT_LOAD_COLORS, ...(loadColors ?? {}) }), [loadColors]);
+  const pointColor = colors.point;
+  const uniformUdlColor = colors.uniformUdl;
+  const triangularUdlColor = colors.triangularUdl;
+  const momentColor = colors.moment;
+  const momentCwColor = useMemo(() => mixColors(momentColor, "#1e293b", 0.35), [momentColor]);
 
   const reactionMap = useMemo(() => {
     if (!reactions) {
@@ -395,7 +470,6 @@ export function BeamSketch({
 
   const UDL_AREA_HEIGHT = 64;
   const UDL_TOP = `calc(50% - ${15 + UDL_AREA_HEIGHT}px)`;
-  const ORANGE_COLOR = "#f97316";
   const UDL_ARROW_HEAD_HEIGHT = 12;
   const UDL_ARROW_BODY_HEIGHT = UDL_AREA_HEIGHT - UDL_ARROW_HEAD_HEIGHT;
   const UDL_ARROW_WIDTH = 18;
@@ -447,17 +521,25 @@ export function BeamSketch({
               <input
                 type="number"
                 autoFocus
-                className="mb-0.5 w-20 rounded bg-red-500/90 px-1.5 py-0.5 text-xs font-semibold text-white text-center outline-none ring-2 ring-white"
+                className="mb-0.5 w-20 rounded px-1.5 py-0.5 text-xs font-semibold text-center outline-none ring-2 ring-white"
                 value={editingValue.value}
                 onChange={handleValueInputChange}
                 onBlur={handleValueInputBlur}
                 onKeyDown={handleValueInputKeyDown}
                 onClick={(e) => e.stopPropagation()}
                 onPointerDown={(e) => e.stopPropagation()}
+                style={{
+                  backgroundColor: applyAlpha(pointColor, 0.92),
+                  color: getReadableTextColor(pointColor),
+                }}
               />
             ) : (
               <span
-                className="mb-0.5 rounded bg-red-500/90 px-1.5 py-0.5 text-xs font-semibold text-white cursor-pointer hover:ring-2 hover:ring-white/60 transition-all pointer-events-auto"
+                className="mb-0.5 rounded px-1.5 py-0.5 text-xs font-semibold cursor-pointer hover:ring-2 hover:ring-white/60 transition-all pointer-events-auto"
+                style={{
+                  backgroundColor: applyAlpha(pointColor, 0.9),
+                  color: getReadableTextColor(pointColor),
+                }}
                 onClick={(e) => handleValueClick(e, "pointLoad", load.id, load.magnitude)}
                 title="Değeri düzenlemek için tıklayın"
               >
@@ -466,13 +548,13 @@ export function BeamSketch({
             )}
             {/* Arrow pointing down towards the beam */}
             <svg
-              className="h-16 w-6 text-red-500"
+              className="h-16 w-6"
               viewBox="0 0 24 64"
               style={{ transform: `rotate(${-(load.angleDeg + 90)}deg)` }}
             >
               <title>{`${load.id} açısı: ${load.angleDeg}°`}</title>
-              <line x1="12" y1="0" x2="12" y2="54" stroke="currentColor" strokeWidth="2.5" />
-              <polygon points="6,54 18,54 12,64" fill="currentColor" />
+              <line x1="12" y1="0" x2="12" y2="54" stroke={pointColor} strokeWidth="2.5" />
+              <polygon points="6,54 18,54 12,64" fill={pointColor} />
             </svg>
           </div>
         ))}
@@ -498,6 +580,9 @@ export function BeamSketch({
           };
           const startScale = getScaleForRatio(0);
           const endScale = getScaleForRatio(1);
+          const baseColor = load.shape === "uniform" ? uniformUdlColor : triangularUdlColor;
+          const labelTextColor = getReadableTextColor(baseColor);
+          const labelBackground = applyAlpha(baseColor, 0.88);
 
           // Calculate line positions to touch top of scaled arrows (body + head both scaled)
           const startArrowTotalHeight = (UDL_ARROW_BODY_HEIGHT + UDL_ARROW_HEAD_HEIGHT) * startScale;
@@ -535,17 +620,25 @@ export function BeamSketch({
                   <input
                     type="number"
                     autoFocus
-                    className="w-20 rounded bg-orange-600/90 px-2 py-0.5 text-xs font-semibold text-white text-center outline-none ring-2 ring-white"
+                    className="w-20 rounded px-2 py-0.5 text-xs font-semibold text-center outline-none ring-2 ring-white"
                     value={editingValue.value}
                     onChange={handleValueInputChange}
                     onBlur={handleValueInputBlur}
                     onKeyDown={handleValueInputKeyDown}
                     onClick={(e) => e.stopPropagation()}
                     onPointerDown={(e) => e.stopPropagation()}
+                    style={{
+                      backgroundColor: applyAlpha(baseColor, 0.92),
+                      color: labelTextColor,
+                    }}
                   />
                 ) : (
                   <span
-                    className="rounded bg-orange-600/90 px-2 py-0.5 text-xs font-semibold text-white cursor-pointer hover:ring-2 hover:ring-white/60 transition-all"
+                    className="rounded px-2 py-0.5 text-xs font-semibold cursor-pointer hover:ring-2 hover:ring-white/60 transition-all"
+                    style={{
+                      backgroundColor: labelBackground,
+                      color: labelTextColor,
+                    }}
                     onClick={(e) => handleValueClick(e, "udl", load.id, load.magnitude)}
                     title="Değeri düzenlemek için tıklayın"
                   >
@@ -557,7 +650,7 @@ export function BeamSketch({
               {load.shape === "uniform" ? (
                 <div
                   className="absolute left-0 right-0 h-1"
-                  style={{ ...baseLinePosition, backgroundColor: ORANGE_COLOR }}
+                  style={{ ...baseLinePosition, backgroundColor: uniformUdlColor }}
                 />
               ) : (
                 <svg
@@ -576,7 +669,7 @@ export function BeamSketch({
                     y1={UDL_AREA_HEIGHT - startArrowTotalHeight}
                     x2="100"
                     y2={UDL_AREA_HEIGHT - endArrowTotalHeight}
-                    stroke={ORANGE_COLOR}
+                    stroke={triangularUdlColor}
                     strokeWidth="2.5"
                     vectorEffect="non-scaling-stroke"
                   />
@@ -603,7 +696,7 @@ export function BeamSketch({
                   return (
                     <svg
                       key={`${load.id}-arrow-${index}`}
-                      className="absolute text-orange-500"
+                      className="absolute"
                       style={{ left: `${position}%`, transform: transforms.join(" "), bottom: 0 }}
                       width={UDL_ARROW_WIDTH}
                       height={UDL_AREA_HEIGHT}
@@ -614,12 +707,12 @@ export function BeamSketch({
                         y1={UDL_AREA_HEIGHT - totalHeight + 1}
                         x2={UDL_ARROW_HALF_WIDTH}
                         y2={UDL_AREA_HEIGHT - scaledHeadHeight}
-                        stroke="currentColor"
+                        stroke={baseColor}
                         strokeWidth="2"
                       />
                       <polygon
                         points={`${UDL_ARROW_HALF_WIDTH - scaledHeadWidth},${UDL_AREA_HEIGHT - scaledHeadHeight} ${UDL_ARROW_HALF_WIDTH + scaledHeadWidth},${UDL_AREA_HEIGHT - scaledHeadHeight} ${UDL_ARROW_HALF_WIDTH},${UDL_AREA_HEIGHT}`}
-                        fill="currentColor"
+                        fill={baseColor}
                       />
                     </svg>
                   );
@@ -656,17 +749,25 @@ export function BeamSketch({
               <input
                 type="number"
                 autoFocus
-                className="w-20 rounded bg-slate-800/90 px-2 py-0.5 text-xs font-semibold text-slate-200 text-center outline-none ring-2 ring-white"
+                className="w-20 rounded px-2 py-0.5 text-xs font-semibold text-center outline-none ring-2 ring-white"
                 value={editingValue.value}
                 onChange={handleValueInputChange}
                 onBlur={handleValueInputBlur}
                 onKeyDown={handleValueInputKeyDown}
                 onClick={(e) => e.stopPropagation()}
                 onPointerDown={(e) => e.stopPropagation()}
+                style={{
+                  backgroundColor: applyAlpha(momentColor, 0.8),
+                  color: getReadableTextColor(momentColor),
+                }}
               />
             ) : (
               <span
-                className="rounded bg-slate-800/90 px-2 py-0.5 text-xs font-semibold text-slate-200 pointer-events-auto cursor-pointer hover:ring-2 hover:ring-white/60 transition-all"
+                className="rounded px-2 py-0.5 text-xs font-semibold pointer-events-auto cursor-pointer hover:ring-2 hover:ring-white/60 transition-all"
+                style={{
+                  backgroundColor: applyAlpha(momentColor, 0.8),
+                  color: getReadableTextColor(momentColor),
+                }}
                 onClick={(e) => handleValueClick(e, "moment", moment.id, moment.magnitude)}
                 title="Değeri düzenlemek için tıklayın"
               >
@@ -674,10 +775,14 @@ export function BeamSketch({
               </span>
             )}
             <div
-              className={clsx(
-                "flex h-8 w-8 items-center justify-center rounded-full border-2 text-lg font-bold",
-                moment.direction === "ccw" ? "border-emerald-300 text-emerald-200" : "border-rose-300 text-rose-200",
-              )}
+              className="flex h-8 w-8 items-center justify-center rounded-full border-2 text-lg font-bold"
+              style={{
+                borderColor: moment.direction === "ccw" ? momentColor : momentCwColor,
+                color: moment.direction === "ccw" ? momentColor : momentCwColor,
+                backgroundColor: moment.direction === "ccw"
+                  ? applyAlpha(momentColor, 0.15)
+                  : applyAlpha(momentCwColor, 0.15),
+              }}
             >
               {moment.direction === "ccw" ? "↻" : "↺"}
             </div>

@@ -18,6 +18,7 @@ import type {
   SupportInput,
   SupportReaction,
   UdlInput,
+  LoadColorConfig,
 } from "@/types/beam";
 
 type PresetConfig = {
@@ -91,6 +92,20 @@ const PRESETS: PresetConfig[] = [
 
 const DEFAULT_PRESET = PRESETS[0];
 
+const createDefaultLoadColors = (): LoadColorConfig => ({
+  point: "#ef4444",
+  uniformUdl: "#f97316",
+  triangularUdl: "#a855f7",
+  moment: "#22c55e",
+});
+
+const LOAD_COLOR_OPTIONS: Array<{ key: keyof LoadColorConfig; label: string }> = [
+  { key: "point", label: "Tekil yük" },
+  { key: "uniformUdl", label: "Düzgün yayılı yük" },
+  { key: "triangularUdl", label: "Üçgen yayılı yük" },
+  { key: "moment", label: "Moment" },
+];
+
 const clampValue = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
 const normalizeAngle = (angle: number) => {
@@ -114,6 +129,7 @@ export default function HomePage() {
   const [pointLoads, setPointLoads] = useState<PointLoadInput[]>(clonePointLoads(DEFAULT_PRESET.config.pointLoads));
   const [udls, setUdls] = useState<UdlInput[]>(cloneUdls(DEFAULT_PRESET.config.udls));
   const [momentLoads, setMomentLoads] = useState<MomentLoadInput[]>(cloneMoments(DEFAULT_PRESET.config.momentLoads));
+  const [loadColors, setLoadColors] = useState<LoadColorConfig>(createDefaultLoadColors());
   const [result, setResult] = useState<BeamSolveResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -303,6 +319,7 @@ export default function HomePage() {
 
   const handleReset = useCallback(() => {
     applyPreset(DEFAULT_PRESET);
+    setLoadColors(createDefaultLoadColors());
   }, [applyPreset]);
 
   const setLengthAndClear = useCallback((value: number) => {
@@ -669,6 +686,22 @@ export default function HomePage() {
   }, [clearPresetSelection]);
 
   const diagramData = result?.diagram ?? { x: [], shear: [], moment: [], normal: [] };
+
+  const shearMarkers = useMemo(() => {
+    const markers = new Set<number>();
+
+    sanitizedSupports.forEach((support) => markers.add(Number(support.position)));
+    sanitizedPointLoads.forEach((load) => markers.add(Number(load.position)));
+    sanitizedUdls.forEach((udl) => {
+      markers.add(Number(udl.start));
+      markers.add(Number(udl.end));
+    });
+    sanitizedMoments.forEach((moment) => markers.add(Number(moment.position)));
+
+    return Array.from(markers)
+      .filter((value) => Number.isFinite(value))
+      .sort((a, b) => a - b);
+  }, [sanitizedSupports, sanitizedPointLoads, sanitizedUdls, sanitizedMoments]);
   const reactions: SupportReaction[] | undefined = result?.reactions;
 
   const closeContextMenu = useCallback(() => {
@@ -889,6 +922,32 @@ export default function HomePage() {
               solving={isPending}
               disableSolveReason={disableSolveReason}
             />
+            <section className="panel space-y-4 p-3 sm:p-4">
+              <div className="flex items-center justify-between">
+                <span className="tag">Yük Renkleri</span>
+              </div>
+              <div className="grid gap-3">
+                {LOAD_COLOR_OPTIONS.map(({ key, label }) => (
+                  <label
+                    key={key}
+                    className="flex items-center justify-between gap-3 text-xs font-medium text-slate-300"
+                  >
+                    <span>{label}</span>
+                    <input
+                      type="color"
+                      className="h-8 w-12 cursor-pointer rounded border border-slate-700/70 bg-slate-800/60"
+                      value={loadColors[key]}
+                      onChange={(event) =>
+                        setLoadColors((prev) => ({
+                          ...prev,
+                          [key]: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                ))}
+              </div>
+            </section>
           </div>
 
           <div className="space-y-6">
@@ -899,6 +958,7 @@ export default function HomePage() {
               udls={sanitizedUdls}
               momentLoads={sanitizedMoments}
               reactions={reactions}
+              loadColors={loadColors}
               onSupportPositionChange={handleSupportPositionDrag}
               onPointLoadPositionChange={handlePointLoadPositionDrag}
               onUdlRangeChange={handleUdlRangeDrag}
@@ -914,6 +974,7 @@ export default function HomePage() {
               moment={diagramData.moment}
               normal={diagramData.normal}
               loading={isPending}
+              shearMarkers={shearMarkers}
             />
           </div>
 
