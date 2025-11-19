@@ -441,6 +441,407 @@ def _fit_polynomial(x_vals: np.ndarray, y_vals: np.ndarray, max_degree: int) -> 
     return coeffs
 
 
+def _explain_shear_coefficients(expr: str, constant: float, payload: SolveRequest, 
+                                reactions: List[SupportReaction], x_start: float, x_end: float) -> str:
+    """Kesme denklemindeki katsayıların nereden geldiğini basitçe açıkla."""
+    lines: List[str] = []
+    
+    # z² terimi var mı kontrol et
+    if "z^2" in expr or "z²" in expr:
+        lines.append("• z² terimi → Üçgen yayılı yükten gelir")
+        for udl in payload.udls:
+            if udl.start < x_end - 1e-6 and udl.end > x_start + 1e-6:
+                if udl.shape == "triangular_increasing":
+                    span = udl.end - udl.start
+                    coeff = _udl_sign(udl) * udl.magnitude / (2 * span)
+                    lines.append(f"  Katsayı = w/(2×L) = {udl.magnitude:.2f}/(2×{span:.2f}) = {coeff:.4f}")
+    
+    # z terimi
+    if "·z" in expr or "*z" in expr:
+        lines.append("• z terimi → Düzgün yayılı yük veya tekil kuvvetlerden gelir")
+        for udl in payload.udls:
+            if udl.start < x_end - 1e-6 and udl.end > x_start + 1e-6:
+                if udl.shape == "uniform":
+                    sign = _udl_sign(udl)
+                    lines.append(f"  Katsayı = w = {sign * udl.magnitude:.2f}")
+    
+    # Sabit terim
+    if abs(constant) > 1e-6:
+        lines.append(f"• Sabit terim → Önceki mesnet ve yüklerin toplamı = {constant:.2f} kN")
+    
+    return "\n".join(lines) if lines else "Denklem sabittir (yayılı yük yok)"
+
+
+def _explain_moment_coefficients(expr: str, payload: SolveRequest, 
+                                  reactions: List[SupportReaction], x_start: float, x_end: float) -> str:
+    """Moment denklemindeki katsayıların nereden geldiğini basitçe açıkla."""
+    lines: List[str] = []
+    
+    # z³ terimi
+    if "z^3" in expr or "z³" in expr:
+        lines.append("• z³ terimi → Üçgen yayılı yükün momenti")
+        for udl in payload.udls:
+            if udl.start < x_end - 1e-6 and udl.end > x_start + 1e-6:
+                if udl.shape == "triangular_increasing":
+                    span = udl.end - udl.start
+                    coeff = _udl_sign(udl) * udl.magnitude / (6 * span)
+                    lines.append(f"  Katsayı = w/(6×L) = {udl.magnitude:.2f}/(6×{span:.2f}) = {coeff:.6f}")
+    
+    # z² terimi
+    if "z^2" in expr or "z²" in expr:
+        lines.append("• z² terimi → Düzgün yayılı yükün momenti")
+        for udl in payload.udls:
+            if udl.start < x_end - 1e-6 and udl.end > x_start + 1e-6:
+                if udl.shape == "uniform":
+                    sign = _udl_sign(udl)
+                    coeff = sign * udl.magnitude / 2
+                    lines.append(f"  Katsayı = w/2 = {udl.magnitude:.2f}/2 = {coeff:.2f}")
+    
+    # z terimi
+    if "·z" in expr or "*z" in expr:
+        lines.append("• z terimi → Mesnet reaksiyonları ve tekil yükler")
+        total_force = 0.0
+        for reaction in reactions:
+            if reaction.position <= x_start + 1e-6:
+                total_force += reaction.vertical
+        for load in payload.point_loads:
+            if load.position <= x_start + 1e-6:
+                total_force -= _vertical_component(load)
+        if abs(total_force) > 1e-6:
+            lines.append(f"  Toplam kuvvet = {total_force:.2f} kN")
+    
+    # Sabit terim
+    lines.append("• Sabit terim → Önceki momentlerin birikimidir")
+    
+    return "\n".join(lines) if lines else "Basit moment denklemi"
+
+
+def _build_detailed_section_derivation(
+    payload: SolveRequest,
+    reactions: List[SupportReaction],
+    x_start: float,
+    x_end: float,
+    region_idx: int,
+    shear_expr: str,
+    moment_expr: str,
+    shear_end: float,
+    moment_end: float,
+) -> str:
+    """
+    Kesit denklemlerinin nasıl oluşturulduğunu adım adım açıklar.
+    """
+    lines: List[str] = []
+    
+    lines.append("═══════════════════════════════════════════════════════")
+    lines.append("KESİT DENKLEMLERİNİN DETAYLI TÜRETİLMESİ")
+    lines.append("═══════════════════════════════════════════════════════\n")
+    
+    # 1. Koordinat sistemi açıklaması
+    lines.append("📍 ADIM 1: KOORDİNAT SİSTEMİ")
+    lines.append("─────────────────────────────────────────────────────")
+    lines.append(f"Bu bölgede 'z' değişkenini kullanıyoruz:")
+    lines.append(f"• z, bölgenin sol sınırından (z = {x_start:.2f} m) başlar")
+    lines.append(f"• z, sağa doğru artar ve bölgenin sonunda (z = {x_end:.2f} m) biter")
+    lines.append(f"• Bölge uzunluğu: {x_end - x_start:.2f} m")
+    lines.append(f"• Herhangi bir z noktasında kesit açacağız (z ∈ [{x_start:.2f}, {x_end:.2f}])\n")
+    
+    # 2. Kesit kesme açıklaması
+    lines.append("✂️ ADIM 2: KESİT AÇMAK")
+    lines.append("─────────────────────────────────────────────────────")
+    lines.append("Bu bölgede z konumunda hayali bir kesit açıyoruz.")
+    lines.append("Kesit, kirişi iki parçaya ayırır:")
+    lines.append("• SOL PARÇA: Kirişin başlangıcından (x=0) z noktasına kadar")
+    lines.append("• SAĞ PARÇA: z noktasından kirişin sonuna kadar")
+    lines.append("\nKesitten sonra sol parçayı inceleyeceğiz (sol parça yöntemi).\n")
+    
+    # 3. Sol parçadaki kuvvetleri listele
+    lines.append("⚖️ ADIM 3: SOL PARÇAYA ETKİYEN KUVVETLER")
+    lines.append("─────────────────────────────────────────────────────")
+    lines.append("Sol parçaya (0'dan z'ye kadar) etki eden tüm kuvvetleri yazalım:\n")
+    
+    force_list: List[str] = []
+    total_vertical_before_z = 0.0
+    moment_contributions: List[str] = []
+    
+    # Mesnet reaksiyonları
+    for reaction in reactions:
+        if reaction.position <= x_start + 1e-6:
+            force_list.append(
+                f"  🔺 Mesnet {reaction.support_id} reaksiyonu: R_{reaction.support_id} = {reaction.vertical:.2f} kN (yukarı)"
+                f"\n     Konum: x = {reaction.position:.2f} m"
+                f"\n     Bu kuvvet sol parçanın başında yer alır."
+            )
+            total_vertical_before_z += reaction.vertical
+            lever_arm = f"(z - {reaction.position:.2f})"
+            moment_contributions.append(
+                f"  • R_{reaction.support_id} × {lever_arm} = {reaction.vertical:.2f} × {lever_arm} kN·m"
+            )
+    
+    # Tekil yükler
+    for load in payload.point_loads:
+        if load.position <= x_start + 1e-6:
+            vertical = _vertical_component(load)
+            if abs(vertical) > 1e-6:
+                direction = "aşağı (-)" if vertical < 0 else "yukarı (+)"
+                force_list.append(
+                    f"  🔻 Tekil yük {load.id}: F = {abs(vertical):.2f} kN ({direction})"
+                    f"\n     Konum: x = {load.position:.2f} m"
+                    f"\n     Dikey bileşen: {vertical:.2f} kN"
+                )
+                total_vertical_before_z += vertical
+                lever_arm = f"(z - {load.position:.2f})"
+                moment_contributions.append(
+                    f"  • F_{load.id} × {lever_arm} = {-vertical:.2f} × {lever_arm} kN·m (eksi işaretli çünkü yük aşağı)"
+                )
+    
+    # Yayılı yükler
+    active_udl_in_region = False
+    for udl in payload.udls:
+        if udl.start < x_end - 1e-6 and udl.end > x_start + 1e-6:
+            active_udl_in_region = True
+            direction = "aşağı" if udl.direction == "down" else "yukarı"
+            shape_name = {
+                "uniform": "Düzgün yayılı",
+                "triangular_increasing": "Üçgen (artan)",
+                "triangular_decreasing": "Üçgen (azalan)"
+            }.get(udl.shape, udl.shape)
+            
+            force_list.append(
+                f"  📊 Yayılı yük {udl.id}: {shape_name}"
+                f"\n     Yoğunluk: w = {udl.magnitude:.2f} kN/m ({direction})"
+                f"\n     Tam aralık: [{udl.start:.2f}, {udl.end:.2f}] m"
+                f"\n     Bu bölgedeki etkisi: z'ye kadar olan kısmı hesaba katılır"
+            )
+            
+            if udl.shape == "uniform":
+                force_list.append(
+                    f"     Formül: Kuvvet = w × (z - {udl.start:.2f})"
+                    f"\n     Moment kolu = (z - {udl.start:.2f})/2 (dikdörtgenin merkezi)"
+                )
+                moment_contributions.append(
+                    f"  • w × (z - {udl.start:.2f}) × (z - {udl.start:.2f})/2"
+                    f"\n    = {_udl_sign(udl) * udl.magnitude:.2f} × (z - {udl.start:.2f})²/2 kN·m"
+                )
+            elif udl.shape == "triangular_increasing":
+                force_list.append(
+                    f"     Formül: Kuvvet = w × (z - {udl.start:.2f})²/(2×L_udl)"
+                    f"\n     Moment kolu = (z - {udl.start:.2f})/3 (üçgenin merkezi)"
+                )
+                moment_contributions.append(
+                    f"  • [w × (z - {udl.start:.2f})²/(2×L)] × [(z - {udl.start:.2f})/3]"
+                    f"\n    = {_udl_sign(udl) * udl.magnitude/(2*(udl.end-udl.start)):.4f} × (z - {udl.start:.2f})³/3 kN·m"
+                )
+            else:  # triangular_decreasing
+                force_list.append(
+                    f"     Formül: Karmaşık (üçgen azalan)"
+                    f"\n     Moment kolu ve kuvvet z'ye bağlı olarak değişir"
+                )
+                moment_contributions.append(
+                    f"  • Azalan üçgen yayılı yük moment katkısı (polinom)"
+                )
+    
+    # İç kuvvetler (bilinmeyenler)
+    force_list.append(
+        f"  ❓ KESİTTE DOĞAN İÇ KUVVETLER (Bilinmeyenler):"
+        f"\n     T(z) = Kesme kuvveti (yukarı yönde pozitif)"
+        f"\n     M(z) = Eğilme momenti (alt lifte çekme pozitif)"
+    )
+    
+    if force_list:
+        lines.append("\n".join(force_list))
+    lines.append("")
+    
+    # 4. Düşey kuvvet dengesi
+    lines.append("⬆️ ADIM 4: DÜŞEY KUVVET DENGESİ (ΣFy = 0)")
+    lines.append("─────────────────────────────────────────────────────")
+    lines.append("Sol parçanın düşey dengesi için tüm yukarı kuvvetler = tüm aşağı kuvvetler:")
+    lines.append("")
+    
+    # Kuvvetleri topla
+    shear_terms: List[str] = []
+    shear_constant = 0.0
+    
+    lines.append("Yukarı kuvvetler:")
+    for reaction in reactions:
+        if reaction.position <= x_start + 1e-6:
+            lines.append(f"  + R_{reaction.support_id} = {reaction.vertical:.2f} kN")
+            shear_constant += reaction.vertical
+            shear_terms.append(f"+{reaction.vertical:.2f}")
+    lines.append(f"  + T(z) = ? (kesitteki iç kesme kuvveti)")
+    
+    lines.append("\nAşağı kuvvetler:")
+    for load in payload.point_loads:
+        if load.position <= x_start + 1e-6:
+            vertical = _vertical_component(load)
+            if abs(vertical) > 1e-6:
+                lines.append(f"  - {abs(vertical):.2f} kN (tekil yük {load.id})")
+                shear_constant += vertical  # vertical zaten negatif
+                shear_terms.append(f"{vertical:.2f}")
+    
+    udl_formula_parts: List[str] = []
+    if active_udl_in_region:
+        lines.append(f"  - Yayılı yüklerin z'ye kadar olan toplamı (z'ye bağlı)")
+        for udl in payload.udls:
+            if udl.start < x_end - 1e-6 and udl.end > x_start + 1e-6:
+                sign = _udl_sign(udl)
+                if udl.shape == "uniform":
+                    udl_formula_parts.append(
+                        f"w×(z-{udl.start:.2f}) = {sign * udl.magnitude:.2f}×(z-{udl.start:.2f})"
+                    )
+                elif udl.shape == "triangular_increasing":
+                    span = udl.end - udl.start
+                    coeff = sign * udl.magnitude / (2 * span)
+                    udl_formula_parts.append(
+                        f"{coeff:.4f}×(z-{udl.start:.2f})²"
+                    )
+                else:  # triangular_decreasing
+                    udl_formula_parts.append(
+                        f"[Karmaşık üçgen azalan formül]"
+                    )
+    
+    lines.append("\nDenge denklemi kurulumu:")
+    lines.append("ΣFy = 0 ⇒ (Yukarı kuvvetler) - (Aşağı kuvvetler) = 0")
+    
+    # Sade açıklama için
+    lines.append("\n💡 KESME DENKLEMİNİN OLUŞUMU:")
+    
+    if not active_udl_in_region:
+        # Basit durum: yayılı yük yok
+        lines.append(f"Bu bölgede yayılı yük YOK, sadece sabit kuvvetler var.")
+        lines.append(f"\nT(z) = (Önceki tüm kuvvetler toplamı)")
+        if shear_terms:
+            calculation = " ".join(shear_terms)
+            lines.append(f"T(z) = {calculation}")
+            lines.append(f"T(z) = {shear_constant:.2f} kN (sabit)")
+    else:
+        # Yayılı yük var
+        lines.append(f"Bu bölgede yayılı yük VAR, kesme z'ye bağlı değişir:")
+        
+        # Her yayılı yük için basit açıklama
+        for udl in payload.udls:
+            if udl.start < x_end - 1e-6 and udl.end > x_start + 1e-6:
+                sign = _udl_sign(udl)
+                if udl.shape == "uniform":
+                    lines.append(f"\n• Düzgün yayılı yük: w = {udl.magnitude:.2f} kN/m")
+                    lines.append(f"  z'ye kadar olan kuvvet = w × (z - {udl.start:.2f})")
+                    lines.append(f"  = {sign * udl.magnitude:.2f} × (z - {udl.start:.2f})")
+                    lines.append(f"  Bu bir doğrusal (z'ye göre) terimdir")
+                    
+                elif udl.shape == "triangular_increasing":
+                    span = udl.end - udl.start
+                    lines.append(f"\n• Üçgen artan yayılı yük: w_max = {udl.magnitude:.2f} kN/m")
+                    lines.append(f"  Yük yoğunluğu: 0'dan başlayıp {udl.magnitude:.2f} kN/m'ye çıkar")
+                    lines.append(f"  z'ye kadar toplam kuvvet = (w_max / 2L) × (z - {udl.start:.2f})²")
+                    coeff = sign * udl.magnitude / (2 * span)
+                    lines.append(f"  = {udl.magnitude:.2f} / (2 × {span:.2f}) × (z - {udl.start:.2f})²")
+                    lines.append(f"  = {coeff:.4f} × (z - {udl.start:.2f})²")
+                    lines.append(f"  Bu bir kuadratik (z²'ye göre) terimdir")
+                    
+                else:  # triangular_decreasing
+                    span = udl.end - udl.start
+                    lines.append(f"\n• Üçgen azalan yayılı yük: w_max = {udl.magnitude:.2f} kN/m")
+                    lines.append(f"  Yük yoğunluğu: {udl.magnitude:.2f} kN/m'den başlayıp 0'a iner")
+                    lines.append(f"  z'ye kadar toplam kuvvet = karmaşık polinom")
+                    lines.append(f"  (z ve z² terimlerinin kombinasyonu)")
+        
+        if shear_terms:
+            lines.append(f"\nSabit kuvvetler: {' '.join(shear_terms)} = {shear_constant:.2f} kN")
+        
+        lines.append(f"\nT(z) = Sabit kuvvetler + Yayılı yük terimleri")
+    
+    lines.append(f"\n✓ Hesaplanan kesme denklemi: T(z) = {shear_expr} kN")
+    
+    # Denklemdeki katsayıları açıkla
+    lines.append(f"\n📌 DENKLEMDEKİ SAYILARIN ANLAMI:")
+    lines.append(_explain_shear_coefficients(shear_expr, shear_constant, payload, reactions, x_start, x_end))
+    
+    # Sayısal doğrulama - daha sade
+    lines.append(f"\n✓ Kontrol: z = {x_end:.2f} m → T = {shear_end:.2f} kN")
+    lines.append("")
+    
+    # 5. Moment dengesi
+    lines.append("🔄 ADIM 5: MOMENT DENGESİ (ΣM_kesit = 0)")
+    lines.append("─────────────────────────────────────────────────────")
+    lines.append("z noktasındaki kesite göre momentleri yazalım.")
+    lines.append("Saat yönünün tersi (+) pozitif kabul edilir:\n")
+    
+    lines.append("💡 MOMENT DENKLEMİNİN OLUŞUMU:")
+    lines.append("Her kuvvetin momenti = Kuvvet × Kol mesafesi\n")
+    
+    # Mesnet reaksiyonlarının momentleri
+    for reaction in reactions:
+        if reaction.position <= x_start + 1e-6 and abs(reaction.vertical) > 1e-6:
+            if abs(reaction.position) < 1e-6:
+                lines.append(f"• Mesnet {reaction.support_id}: {reaction.vertical:.2f} × z = {reaction.vertical:.2f}·z kN·m")
+            else:
+                lines.append(f"• Mesnet {reaction.support_id}: {reaction.vertical:.2f} × (z - {reaction.position:.2f}) kN·m")
+    
+    # Tekil yüklerin momentleri
+    for load in payload.point_loads:
+        if load.position <= x_start + 1e-6:
+            vertical = _vertical_component(load)
+            if abs(vertical) > 1e-6:
+                lines.append(f"• Tekil yük {load.id}: {-vertical:.2f} × (z - {load.position:.2f}) kN·m")
+    
+    # Yayılı yüklerin momentleri
+    if active_udl_in_region:
+        for udl in payload.udls:
+            if udl.start < x_end - 1e-6 and udl.end > x_start + 1e-6:
+                sign = _udl_sign(udl)
+                if udl.shape == "uniform":
+                    coeff = sign * udl.magnitude / 2
+                    lines.append(f"\n• Düzgün yayılı yük {udl.id}:")
+                    lines.append(f"  Kuvvet × Kol = [w×(z-{udl.start:.2f})] × [(z-{udl.start:.2f})/2]")
+                    lines.append(f"  = {udl.magnitude:.2f}/2 × (z-{udl.start:.2f})²")
+                    lines.append(f"  = {coeff:.2f} × (z-{udl.start:.2f})²")
+                    
+                elif udl.shape == "triangular_increasing":
+                    span = udl.end - udl.start
+                    coeff = sign * udl.magnitude / (6 * span)
+                    lines.append(f"\n• Üçgen artan yük {udl.id}:")
+                    lines.append(f"  Toplam yük × Ağırlık merkezi = [w/(2L)×(z-{udl.start:.2f})²] × [(z-{udl.start:.2f})/3]")
+                    lines.append(f"  = {udl.magnitude:.2f}/(6×{span:.2f}) × (z-{udl.start:.2f})³")
+                    lines.append(f"  = {coeff:.6f} × (z-{udl.start:.2f})³")
+                else:
+                    lines.append(f"\n• Üçgen azalan yük {udl.id}: Karmaşık polinom terimi")
+    
+    lines.append(f"\nM(z) = [Yukarıdaki tüm momentlerin toplamı]")
+    lines.append(f"\n✓ Hesaplanan moment denklemi: M(z) = {moment_expr} kN·m")
+    
+    # Denklemdeki katsayıları açıkla
+    lines.append(f"\n� DENKLEMDEKİ SAYILARIN ANLAMI:")
+    lines.append(_explain_moment_coefficients(moment_expr, payload, reactions, x_start, x_end))
+    
+    # Sayısal doğrulama - sade
+    lines.append(f"\n✓ Kontrol: z = {x_end:.2f} m → M = {moment_end:.2f} kN·m")
+    lines.append("")
+    
+    # 6. Denklemlerin anlamı
+    lines.append("📐 ADIM 6: DENKLEMLERİN FİZİKSEL ANLAMI")
+    lines.append("─────────────────────────────────────────────────────")
+    lines.append(f"• T(z) = {shear_expr}")
+    lines.append(f"  Bu denklem, bölgenin HER noktasındaki kesme kuvvetini verir.")
+    lines.append(f"  Örnek: z = {x_end:.2f} m için → T = {shear_end:.2f} kN")
+    lines.append("")
+    lines.append(f"• M(z) = {moment_expr}")
+    lines.append(f"  Bu denklem, bölgenin HER noktasındaki eğilme momentini verir.")
+    lines.append(f"  Örnek: z = {x_end:.2f} m için → M = {moment_end:.2f} kN·m")
+    lines.append("")
+    
+    # 7. Denklemlerin türetme özeti
+    lines.append("🎯 ÖZET: NEDEN BU DENKLEMLER?")
+    lines.append("─────────────────────────────────────────────────────")
+    lines.append("1. Kirişte z noktasında hayali kesit açtık")
+    lines.append("2. Sol parçayı serbest cisim olarak ele aldık")
+    lines.append("3. Sol parçaya etki eden TÜM kuvvetleri (reaksiyon, yük, iç kuvvet) yazdık")
+    lines.append("4. ΣFy = 0 denkleminden T(z) formülünü bulduk")
+    lines.append("5. ΣM = 0 denkleminden M(z) formülünü bulduk")
+    lines.append("6. Bu formüller, bölgedeki HER noktada geçerlidir")
+    lines.append("═══════════════════════════════════════════════════════\n")
+    
+    return "\n".join(lines)
+
+
 def _describe_region_loads(
     payload: SolveRequest,
     reactions: List[SupportReaction],
@@ -1022,6 +1423,12 @@ def _generate_section_method(
         shear_end_val = float(shear_poly(end))
         moment_end_val = float(moment_poly(end))
 
+        # Detaylı açıklama için bölgedeki yükleri analiz et
+        detailed_derivation = _build_detailed_section_derivation(
+            payload, reactions, start, end, idx, shear_expression, moment_expression,
+            shear_end_val, moment_end_val
+        )
+
         bullets: List[str] = [
             f"ΣFy = 0 ⇒ T_{idx}(z) = {shear_expression} [kN]",
             f"ΣM_kesit = 0 ⇒ M_{idx}(z) = {moment_expression} [kN·m]",
@@ -1047,7 +1454,8 @@ def _generate_section_method(
         explanation_text = (
             f"Bölge {idx}: {_format_interval(start, end, 'z')}\n"
             f"{_describe_region_loads(payload, reactions, start, end)}\n\n"
-            "KESİT DENKLEMLERİ\n"
+            + detailed_derivation + "\n\n"
+            "KESİT DENKLEMLERİ SONUÇLARI\n"
             + "\n".join(bullets)
         )
 
