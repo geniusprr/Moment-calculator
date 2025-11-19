@@ -1,6 +1,7 @@
 "use client";
 
 import type {
+  BeamType,
   MomentLoadInput,
   PointLoadInput,
   SupportInput,
@@ -8,6 +9,7 @@ import type {
 } from "@/types/beam";
 
 interface BeamFormProps {
+  beamType: BeamType;
   length: number;
   onLengthChange: (value: number) => void;
   supports: SupportInput[];
@@ -40,6 +42,7 @@ const sectionHintClass = "text-xs text-slate-500";
 const labelClass = "text-xs font-medium uppercase tracking-wide text-slate-400";
 
 export function BeamForm({
+  beamType,
   length,
   onLengthChange,
   supports,
@@ -63,6 +66,11 @@ export function BeamForm({
   solving,
   disableSolveReason,
 }: BeamFormProps) {
+  const maxSupports = beamType === "cantilever" ? 1 : 2;
+  const supportHint =
+    beamType === "cantilever"
+      ? "Konsol ��z��m i��in tek ankastre mesnet gerekir (x=0 veya x=L)."
+      : "Statik ��z��m i��in tam olarak iki mesnet gereklidir.";
   return (
     <div className="panel space-y-6 p-6">
       <div className="flex items-center justify-between">
@@ -98,19 +106,23 @@ export function BeamForm({
         <header className="flex items-center justify-between">
           <div>
             <p className={sectionTitleClass}>Mesnetler</p>
-            <p className={sectionHintClass}>Statik çözüm için tam olarak iki mesnet gereklidir.</p>
+            <p className={sectionHintClass}>{supportHint}</p>
           </div>
           <button
             type="button"
             onClick={onAddSupport}
-            disabled={supports.length >= 2}
+            disabled={supports.length >= maxSupports}
             className="rounded-full bg-slate-800/70 px-3 py-1 text-xs font-semibold text-slate-200 transition hover:bg-slate-700/80 disabled:cursor-not-allowed disabled:opacity-40"
           >
             Mesnet ekle
           </button>
         </header>
         {supports.length === 0 ? (
-          <div className="panel-muted p-4 text-sm text-slate-400">Çözümü etkinleştirmek için iki mesnet ekleyin.</div>
+          <div className="panel-muted p-4 text-sm text-slate-400">
+            {beamType === "cantilever"
+              ? "Konsol için ankastre mesnet ekleyin."
+              : "Çözümü etkinleştirmek için iki mesnet ekleyin."}
+          </div>
         ) : (
           <div className="space-y-3">
             {supports.map((support) => (
@@ -139,9 +151,11 @@ export function BeamForm({
                       className={fieldClasses}
                       value={support.type}
                       onChange={(event) => onSupportChange(support.id, "type", event.target.value)}
+                      disabled={beamType === "cantilever"}
                     >
                       <option value="pin">Menteşe</option>
                       <option value="roller">Kayar</option>
+                      <option value="fixed">Ankastre</option>
                     </select>
                   </label>
                   <label className="space-y-1">

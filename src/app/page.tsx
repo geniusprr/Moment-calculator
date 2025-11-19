@@ -13,6 +13,7 @@ import KtoLogo from "../../assets/KtoLOGO.png";
 import type {
   BeamSolveRequest,
   BeamSolveResponse,
+  BeamType,
   MomentLoadInput,
   PointLoadInput,
   SupportInput,
@@ -91,6 +92,10 @@ const PRESETS: PresetConfig[] = [
 ];
 
 const DEFAULT_PRESET = PRESETS[0];
+const BEAM_TYPES: Array<{ key: BeamType; label: string; hint: string }> = [
+  { key: "simply_supported", label: "Normal kiriş", hint: "2 mesnet" },
+  { key: "cantilever", label: "Konsol kiriş", hint: "Ankastre" },
+];
 
 const createDefaultLoadColors = (): LoadColorConfig => ({
   point: "#ef4444",
@@ -124,6 +129,7 @@ function createRandomId(): string {
 }
 
 export default function HomePage() {
+  const [beamType, setBeamType] = useState<BeamType>("simply_supported");
   const [length, setLength] = useState(DEFAULT_PRESET.config.length);
   const [supports, setSupports] = useState<SupportInput[]>(cloneSupports(DEFAULT_PRESET.config.supports));
   const [pointLoads, setPointLoads] = useState<PointLoadInput[]>(clonePointLoads(DEFAULT_PRESET.config.pointLoads));
@@ -225,14 +231,28 @@ export default function HomePage() {
   );
 
   const disableSolveReason = useMemo(() => {
-    if (sanitizedSupports.length !== 2) {
-      return "Static solution requires exactly two supports.";
+    if (beamType === "simply_supported") {
+      if (sanitizedSupports.length !== 2) {
+        return "Statik çözüm için tam olarak iki mesnet gerekir.";
+      }
+      if (Math.abs(sanitizedSupports[0].position - sanitizedSupports[1].position) < 1e-6) {
+        return "Support positions must be distinct.";
+      }
+      return null;
     }
-    if (Math.abs(sanitizedSupports[0].position - sanitizedSupports[1].position) < 1e-6) {
-      return "Support positions must be distinct.";
+
+    if (sanitizedSupports.length !== 1) {
+      return "Konsol çözümü için tek bir ankastre mesnet gereklidir.";
+    }
+    const support = sanitizedSupports[0];
+    if (support.type !== "fixed") {
+      return "Konsol için mesnet tipi ankastre olmalıdır.";
+    }
+    if (Math.min(Math.abs(support.position), Math.abs(length - support.position)) > 1e-3) {
+      return "Ankastre mesnet x=0 veya x=L konumunda olmalıdır.";
     }
     return null;
-  }, [sanitizedSupports]);
+  }, [beamType, length, sanitizedSupports]);
 
   const runSolve = useCallback(() => {
     if (disableSolveReason) {
@@ -243,6 +263,7 @@ export default function HomePage() {
 
     const payload: BeamSolveRequest = {
       length,
+      beam_type: beamType,
       supports: sanitizedSupports.map((support) => ({ id: support.id, type: support.type, position: support.position })),
       point_loads: sanitizedPointLoads.map((load) => ({
         id: load.id,
@@ -276,7 +297,7 @@ export default function HomePage() {
         setError(err instanceof Error ? err.message : "Unexpected solver error.");
       }
     });
-  }, [disableSolveReason, length, sanitizedSupports, sanitizedPointLoads, sanitizedUdls, sanitizedMoments]);
+  }, [beamType, disableSolveReason, length, sanitizedSupports, sanitizedPointLoads, sanitizedUdls, sanitizedMoments]);
 
   useEffect(() => {
     if (!pendingPresetKey) {
@@ -293,6 +314,7 @@ export default function HomePage() {
 
   const applyPreset = useCallback((preset: PresetConfig) => {
     const { config } = preset;
+    setBeamType("simply_supported");
     setLength(config.length);
     setSupports(cloneSupports(config.supports));
     setPointLoads(clonePointLoads(config.pointLoads));
@@ -328,6 +350,25 @@ export default function HomePage() {
     setLength(value);
   }, [clearPresetSelection]);
 
+  const handleBeamTypeChange = useCallback(
+    (next: BeamType) => {
+      setBeamType(next);
+      clearPresetSelection();
+      setError(null);
+
+      if (next === "cantilever") {
+        setSupports([{ id: "A", type: "fixed", position: 0 }]);
+        return;
+      }
+
+      setSupports([
+        { id: "A", type: "pin", position: 0 },
+        { id: "B", type: "roller", position: length },
+      ]);
+    },
+    [clearPresetSelection, length],
+  );
+
   const handleSupportChange = useCallback(
     (id: string, field: keyof SupportInput, value: string | number) => {
       clearPresetSelection();
@@ -341,16 +382,24 @@ export default function HomePage() {
             return { ...support, id: String(value).toUpperCase() };
           }
           if (field === "type") {
+            if (beamType === "cantilever") {
+              return { ...support, type: "fixed" };
+            }
             return { ...support, type: value as SupportInput["type"] };
           }
           if (field === "position") {
-            return { ...support, position: clampValue(Number(value), 0, length) };
+            const numeric = clampValue(Number(value), 0, length);
+            if (beamType === "cantilever") {
+              const snapped = numeric < length / 2 ? 0 : length;
+              return { ...support, position: snapped, type: "fixed" };
+            }
+            return { ...support, position: numeric };
           }
           return support;
         }),
       );
     },
-    [clearPresetSelection, length],
+    [beamType, clearPresetSelection, length],
   );
 
   const handlePointLoadChange = useCallback(
@@ -449,11 +498,12 @@ export default function HomePage() {
   const handleSupportPositionDrag = useCallback(
     (id: string, position: number) => {
       clearPresetSelection();
+      const snapped = beamType === "cantilever" ? (position < length / 2 ? 0 : length) : clampValue(position, 0, length);
       setSupports((current) =>
-        current.map((support) => (support.id === id ? { ...support, position: clampValue(position, 0, length) } : support)),
+        current.map((support) => (support.id === id ? { ...support, position: snapped, type: beamType === "cantilever" ? "fixed" : support.type } : support)),
       );
     },
-    [clearPresetSelection, length],
+    [beamType, clearPresetSelection, length],
   );
 
   const handlePointLoadPositionDrag = useCallback(
@@ -505,9 +555,23 @@ export default function HomePage() {
     (position?: number) => {
       clearPresetSelection();
       setSupports((current) => {
-        if (current.length >= 2) {
+        const maxSupports = beamType === "cantilever" ? 1 : 2;
+        if (current.length >= maxSupports) {
           return current;
         }
+
+        if (beamType === "cantilever") {
+          const proposed = position !== undefined ? clampValue(position, 0, length) : 0;
+          const snapped = proposed < length / 2 ? 0 : length;
+          return [
+            {
+              id: "A",
+              type: "fixed",
+              position: snapped,
+            },
+          ];
+        }
+
         const nextPosition = position !== undefined ? clampValue(position, 0, length) : current.length === 0 ? 0 : length;
         const type: SupportInput["type"] = current.length === 0 ? "pin" : "roller";
         const usedIds = new Set(current.map((support) => support.id.toUpperCase()));
@@ -523,7 +587,7 @@ export default function HomePage() {
         ];
       });
     },
-    [clearPresetSelection, length],
+    [beamType, clearPresetSelection, length],
   );
 
   const handleAddPointLoad = useCallback(
@@ -726,10 +790,11 @@ export default function HomePage() {
     const { target } = contextMenu;
     switch (target.kind) {
       case "blank": {
-        const canAddSupport = supports.length < 2;
+        const maxSupports = beamType === "cantilever" ? 1 : 2;
+        const canAddSupport = supports.length < maxSupports;
         return [
           {
-            label: canAddSupport ? "Mesnet ekle" : "Mesnet ekle (en fazla iki)",
+            label: canAddSupport ? "Mesnet ekle" : `Mesnet ekle (en fazla ${maxSupports})`,
             disabled: !canAddSupport,
             action: () => handleAddSupport(target.x),
           },
@@ -830,7 +895,7 @@ export default function HomePage() {
       default:
         return [];
     }
-  }, [contextMenu, handleAddMoment, handleAddPointLoad, handleAddSupport, handleAddUdl, handleRemoveMoment, handleRemovePointLoad, handleRemoveSupport, handleRemoveUdl, promptPointAngle, rotatePointAngle, setPointAngle, setUdlShape, supports.length, toggleMomentDirection, toggleUdlDirection, udls]);
+  }, [beamType, contextMenu, handleAddMoment, handleAddPointLoad, handleAddSupport, handleAddUdl, handleRemoveMoment, handleRemovePointLoad, handleRemoveSupport, handleRemoveUdl, promptPointAngle, rotatePointAngle, setPointAngle, setUdlShape, supports.length, toggleMomentDirection, toggleUdlDirection, udls]);
 
   return (
     <main
@@ -843,7 +908,7 @@ export default function HomePage() {
     >
       {/* Header */}
       <header className="border-b border-slate-800/50 bg-slate-900/80 backdrop-blur-md">
-        <div className="mx-auto flex w-full max-w-none items-center justify-between px-4 py-3 sm:px-6">
+        <div className="mx-auto flex w-full max-w-none items-center justify-between gap-4 px-4 py-3 sm:px-6">
           <div className="flex items-center gap-3">
             <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-white/95 shadow-lg ring-1 ring-slate-800/5">
               <Image src={KtoLogo} alt="KTO Logo" className="h-11 w-11 object-contain" priority />
@@ -853,6 +918,31 @@ export default function HomePage() {
               <p className="text-xs text-slate-400">Statik analiz aracı</p>
             </div>
           </div>
+
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1 rounded-full border border-slate-700/70 bg-slate-800/70 p-1 shadow-inner">
+              {BEAM_TYPES.map((type) => {
+                const active = beamType === type.key;
+                return (
+                  <button
+                    key={type.key}
+                    type="button"
+                    onClick={() => handleBeamTypeChange(type.key)}
+                    className={clsx(
+                      "flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold transition",
+                      active
+                        ? "bg-gradient-to-r from-cyan-500 to-blue-500 text-slate-950 shadow-lg"
+                        : "text-slate-200 hover:bg-slate-700/70",
+                    )}
+                  >
+                    <span>{type.label}</span>
+                    <span className="text-[10px] font-medium text-slate-400">{type.hint}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           <div className="hidden text-right sm:block">
             <p className="text-[10px] text-slate-500">Made by</p>
             <p className="text-xs font-semibold text-slate-300">Deha Özcan</p>
@@ -899,6 +989,7 @@ export default function HomePage() {
               </div>
             </section>
             <BeamForm
+              beamType={beamType}
               length={length}
               onLengthChange={setLengthAndClear}
               supports={supports}

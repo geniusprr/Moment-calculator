@@ -1005,6 +1005,8 @@ def _moment_diagram(payload: SolveRequest, x_axis: np.ndarray, reactions: List[S
     for reaction in reactions:
         offsets = np.maximum(x_axis - reaction.position, 0.0)
         moment += reaction.vertical * offsets
+        if hasattr(reaction, "moment"):
+            moment += getattr(reaction, "moment", 0.0) * (x_axis >= reaction.position)
 
     for load in payload.point_loads:
         vertical = _vertical_component(load)
@@ -2255,6 +2257,11 @@ def _generate_detailed_solutions(
 
 
 def solve_beam(payload: SolveRequest) -> SolveResponse:
+    if getattr(payload, "beam_type", "simply_supported") == "cantilever":
+        from beam_solver_backend.solver.cantilever_solver import solve_cantilever_beam
+
+        return solve_cantilever_beam(payload)
+
     sampling_points = DEFAULT_SAMPLING_POINTS
 
     start_time = perf_counter()

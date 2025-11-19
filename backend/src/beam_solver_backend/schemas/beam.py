@@ -4,10 +4,11 @@ from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field, ValidationInfo, model_validator
 
-SupportType = Literal["pin", "roller"]
+SupportType = Literal["pin", "roller", "fixed"]
 Direction = Literal["down", "up"]
 MomentDirection = Literal["ccw", "cw"]
 DistributedLoadShape = Literal["uniform", "triangular_increasing", "triangular_decreasing"]
+BeamType = Literal["simply_supported", "cantilever"]
 
 
 class Support(BaseModel):
@@ -45,18 +46,35 @@ class SolveRequest(BaseModel):
     point_loads: List[PointLoad] = Field(default_factory=list)
     udls: List[UniformDistributedLoad] = Field(default_factory=list)
     moment_loads: List[MomentLoad] = Field(default_factory=list)
+    beam_type: BeamType = Field(default="simply_supported", description="Beam boundary condition configuration")
 
     @model_validator(mode="after")
     def validate_domain(self, info: ValidationInfo) -> "SolveRequest":
-        if len(self.supports) != 2:
-            raise ValueError("Exactly two supports are required for the current solver.")
-
         length = self.length
-        positions = sorted(support.position for support in self.supports)
-        if positions[0] < 0 or positions[1] > length:
-            raise ValueError("Support positions must lie within the beam span.")
-        if abs(positions[0] - positions[1]) < 1e-6:
-            raise ValueError("Support positions must be distinct.")
+
+        if self.beam_type == "simply_supported":
+            if len(self.supports) != 2:
+                raise ValueError("Basit kiri� i�in tam olarak iki mesnet tan�mlanmal�d�r.")
+
+            positions = sorted(support.position for support in self.supports)
+            if positions[0] < 0 or positions[1] > length:
+                raise ValueError("Mesnet konumlar� kiri� boyu i�inde olmal�d�r.")
+            if abs(positions[0] - positions[1]) < 1e-6:
+                raise ValueError("Mesnet konumlar� ayr� olmal�d�r.")
+
+            invalid_fixed = [support for support in self.supports if support.type == "fixed"]
+            if invalid_fixed:
+                raise ValueError("Basit kiri� se�ene�inde ankastre (fixed) mesnet kullan�lamaz.")
+        else:
+            if len(self.supports) != 1:
+                raise ValueError("Konsol kiri� i�in tek bir ankastre mesnet gereklidir.")
+
+            only_support = self.supports[0]
+            if only_support.type != "fixed":
+                raise ValueError("Konsol kiri� i�in mesnet tipi 'fixed' olmal�d�r.")
+
+            if not (abs(only_support.position) < 1e-9 or abs(only_support.position - length) < 1e-9):
+                raise ValueError("Konsol mesneti kiri�in ba�lang�c�nda veya ucunda olmal�d�r (x=0 veya x=L).")
 
         for load in self.point_loads:
             if not 0 <= load.position <= length:
@@ -81,6 +99,7 @@ class SupportReaction(BaseModel):
     position: float
     vertical: float
     axial: float
+    moment: float = Field(default=0.0, description="Support fixing moment for cantilever cases (kN*m)")
 
 
 class DiagramData(BaseModel):

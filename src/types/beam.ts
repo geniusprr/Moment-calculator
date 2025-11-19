@@ -1,7 +1,8 @@
-﻿export type SupportType = "pin" | "roller";
+export type SupportType = "pin" | "roller" | "fixed";
 export type Direction = "down" | "up";
 export type MomentDirection = "ccw" | "cw";
 export type UdlShape = "uniform" | "triangular_increasing" | "triangular_decreasing";
+export type BeamType = "simply_supported" | "cantilever";
 
 export interface SupportInput {
   id: string;
@@ -34,6 +35,7 @@ export interface MomentLoadInput {
 
 export interface BeamSolveRequest {
   length: number;
+  beam_type: BeamType;
   supports: Array<{ id: string; type: SupportType; position: number }>;
   point_loads: Array<{ id: string; magnitude: number; position: number; angle_deg: number }>;
   udls: Array<{ id: string; magnitude: number; start: number; end: number; direction: Direction; shape: UdlShape }>;
@@ -46,6 +48,7 @@ export interface SupportReaction {
   position: number;
   vertical: number;
   axial: number;
+  moment?: number;
 }
 
 export interface BeamSectionHighlight {
