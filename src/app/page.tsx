@@ -1,6 +1,7 @@
 "use client";
 
 import clsx from "clsx";
+import { motion } from "framer-motion";
 import Image from "next/image";
 import { ChangeEvent, useCallback, useEffect, useMemo, useState, useTransition } from "react";
 
@@ -8,12 +9,14 @@ import { BeamDiagrams } from "@/components/BeamDiagrams";
 import { BeamForm } from "@/components/BeamForm";
 import { BeamSketch, SketchContextTarget } from "@/components/BeamSketch";
 import { DetailedSolutionPanel } from "@/components/DetailedSolutionPanel";
-import { solveBeam } from "@/lib/api";
+import { solveBeam, solveChimneyPeriod } from "@/lib/api";
 import KtoLogo from "../../assets/KtoLOGO.png";
 import type {
   BeamSolveRequest,
   BeamSolveResponse,
   BeamType,
+  ChimneyPeriodRequest,
+  ChimneyPeriodResponse,
   MomentLoadInput,
   PointLoadInput,
   SupportInput,
@@ -42,6 +45,8 @@ type ContextMenuItem = {
   tooltip?: string;
   submenu?: ContextMenuItem[];
 };
+
+type Mode = "beam" | "chimney";
 
 const PRESETS: PresetConfig[] = [
   {
@@ -129,6 +134,7 @@ function createRandomId(): string {
 }
 
 export default function HomePage() {
+  const [mode, setMode] = useState<Mode>("beam");
   const [beamType, setBeamType] = useState<BeamType>("simply_supported");
   const [length, setLength] = useState(DEFAULT_PRESET.config.length);
   const [supports, setSupports] = useState<SupportInput[]>(cloneSupports(DEFAULT_PRESET.config.supports));
@@ -146,6 +152,16 @@ export default function HomePage() {
   );
   const [openSubmenu, setOpenSubmenu] = useState<string | null>(null);
   const [isDetailedSolutionOpen, setIsDetailedSolutionOpen] = useState(false);
+  const [chimneyInput, setChimneyInput] = useState({
+    height_m: 60,
+    elastic_modulus_gpa: 30,
+    moment_inertia_m4: 0.6,
+    mass_per_length_kgm: 1800,
+    tip_mass_kg: 0,
+  });
+  const [chimneyResult, setChimneyResult] = useState<ChimneyPeriodResponse | null>(null);
+  const [chimneyError, setChimneyError] = useState<string | null>(null);
+  const [isChimneyPending, startChimneyTransition] = useTransition();
 
   useEffect(() => {
     setSupports((current) => current.map((support) => ({ ...support, position: clampValue(support.position, 0, length) })));
@@ -299,6 +315,27 @@ export default function HomePage() {
     });
   }, [beamType, disableSolveReason, length, sanitizedSupports, sanitizedPointLoads, sanitizedUdls, sanitizedMoments]);
 
+  const handleChimneySolve = useCallback(() => {
+    const payload: ChimneyPeriodRequest = {
+      height_m: Number(chimneyInput.height_m),
+      elastic_modulus_gpa: Number(chimneyInput.elastic_modulus_gpa),
+      moment_inertia_m4: Number(chimneyInput.moment_inertia_m4),
+      mass_per_length_kgm: Number(chimneyInput.mass_per_length_kgm),
+      tip_mass_kg: Number(chimneyInput.tip_mass_kg ?? 0),
+    };
+
+    startChimneyTransition(async () => {
+      try {
+        setChimneyError(null);
+        const response = await solveChimneyPeriod(payload);
+        setChimneyResult(response);
+      } catch (err) {
+        setChimneyResult(null);
+        setChimneyError(err instanceof Error ? err.message : "Beklenmedik periyot hesap hatası.");
+      }
+    });
+  }, [chimneyInput]);
+
   useEffect(() => {
     if (!pendingPresetKey) {
       return;
@@ -349,6 +386,25 @@ export default function HomePage() {
     setError(null);
     setLength(value);
   }, [clearPresetSelection]);
+
+  const handleChimneyChange = useCallback(
+    (field: keyof ChimneyPeriodRequest, value: number) => {
+      setChimneyInput((current) => ({ ...current, [field]: value }));
+    },
+    [],
+  );
+
+  const resetChimney = useCallback(() => {
+    setChimneyInput({
+      height_m: 60,
+      elastic_modulus_gpa: 30,
+      moment_inertia_m4: 0.6,
+      mass_per_length_kgm: 1800,
+      tip_mass_kg: 0,
+    });
+    setChimneyResult(null);
+    setChimneyError(null);
+  }, []);
 
   const handleBeamTypeChange = useCallback(
     (next: BeamType) => {
@@ -919,248 +975,413 @@ export default function HomePage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1 rounded-full border border-slate-700/70 bg-slate-800/70 p-1 shadow-inner">
-              {BEAM_TYPES.map((type) => {
-                const active = beamType === type.key;
+          <div className="flex flex-col items-end gap-2 sm:flex-row sm:items-center">
+            <div className="flex items-center gap-1 rounded-full border border-slate-700/70 bg-slate-800/70 p-1 shadow-inner relative">
+              {[
+                { key: "beam", label: "Kiriş Analizi" },
+                { key: "chimney", label: "Baca Periyodu" },
+              ].map((item) => {
+                const active = mode === item.key;
                 return (
                   <button
-                    key={type.key}
+                    key={item.key}
                     type="button"
-                    onClick={() => handleBeamTypeChange(type.key)}
+                    onClick={() => setMode(item.key as Mode)}
                     className={clsx(
-                      "flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold transition",
-                      active
-                        ? "bg-gradient-to-r from-cyan-500 to-blue-500 text-slate-950 shadow-lg"
-                        : "text-slate-200 hover:bg-slate-700/70",
+                      "relative z-10 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors duration-200",
+                      active ? "text-slate-950" : "text-slate-200 hover:text-white"
                     )}
                   >
-                    <span>{type.label}</span>
-                    <span className="text-[10px] font-medium text-slate-400">{type.hint}</span>
+                    {active && (
+                      <motion.div
+                        layoutId="mode-indicator"
+                        className="absolute inset-0 -z-10 rounded-full bg-gradient-to-r from-emerald-400 to-cyan-500 shadow-lg"
+                        transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                      />
+                    )}
+                    {item.label}
                   </button>
                 );
               })}
             </div>
+
+            {mode === "beam" && (
+              <div className="flex items-center gap-1 rounded-full border border-slate-700/70 bg-slate-800/70 p-1 shadow-inner relative">
+                {BEAM_TYPES.map((type) => {
+                  const active = beamType === type.key;
+                  return (
+                    <button
+                      key={type.key}
+                      type="button"
+                      onClick={() => handleBeamTypeChange(type.key)}
+                      className={clsx(
+                        "relative z-10 flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors duration-200",
+                        active ? "text-slate-950" : "text-slate-200 hover:text-white"
+                      )}
+                    >
+                      {active && (
+                        <motion.div
+                          layoutId="beam-type-indicator"
+                          className="absolute inset-0 -z-10 rounded-full bg-gradient-to-r from-cyan-500 to-blue-500 shadow-lg"
+                          transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                        />
+                      )}
+                      <span>{type.label}</span>
+                      <span className={clsx("text-[10px] font-medium", active ? "text-slate-800" : "text-slate-400")}>{type.hint}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           <div className="hidden text-right sm:block">
             <p className="text-[10px] text-slate-500">Made by</p>
-            <p className="text-xs font-semibold text-slate-300">Deha Özcan</p>
+            <p className="text-xs font-semibold text-slate-300">Team Vortex</p>
           </div>
         </div>
       </header>
 
-      <div className="mx-auto flex w-full max-w-none flex-col gap-4 px-4 pt-4 sm:px-6">
-        <div className="grid gap-6 xl:grid-cols-[380px_minmax(0,1fr)_380px]">
-          <div className="space-y-6">
-            <section className="panel space-y-3 p-3 sm:p-4">
-              <div className="flex items-center justify-between gap-2">
-                <span className="tag">Ön Ayarlar</span>
-                <button
-                  type="button"
-                  onClick={handleReset}
-                  className="rounded-full border border-slate-700/70 px-3 py-1 text-xs text-slate-300 transition hover:border-slate-500 hover:text-white"
-                >
-                  Varsayılana sıfırla
-                </button>
-              </div>
-              <div className="space-y-2">
-                <label htmlFor="preset-select" className="text-xs font-semibold text-slate-300">
-                  Hazır şablon seçin
-                </label>
-                <select
-                  id="preset-select"
-                  value={presetSelectValue}
-                  onChange={handlePresetChange}
-                  className="w-full rounded-lg border border-slate-700/80 bg-slate-900/70 px-3 py-2 text-sm text-slate-100 transition focus:border-cyan-400 focus:outline-none focus:ring-1 focus:ring-cyan-400"
-                >
-                  <option value="custom" disabled={!!selectedPreset}>
-                    Özel yapılandırma
-                  </option>
-                  {PRESETS.map((preset) => (
-                    <option key={preset.key} value={preset.key}>
-                      {preset.title}
-                    </option>
-                  ))}
-                </select>
-                <p className="text-[11px] text-slate-400">
-                  {selectedPreset ? selectedPreset.description : "Parametrelerinizi özelleştirdiniz."}
-                </p>
-              </div>
-            </section>
-            <BeamForm
-              beamType={beamType}
-              length={length}
-              onLengthChange={setLengthAndClear}
-              supports={supports}
-              onSupportChange={handleSupportChange}
-              onAddSupport={() => handleAddSupport()}
-              onRemoveSupport={handleRemoveSupport}
-              pointLoads={pointLoads}
-              onPointLoadChange={handlePointLoadChange}
-              onAddPointLoad={() => handleAddPointLoad()}
-              onRemovePointLoad={handleRemovePointLoad}
-              udls={udls}
-              onUdlChange={handleUdlChange}
-              onAddUdl={() => handleAddUdl()}
-              onRemoveUdl={handleRemoveUdl}
-              momentLoads={momentLoads}
-              onMomentChange={handleMomentChange}
-              onAddMoment={() => handleAddMoment()}
-              onRemoveMoment={handleRemoveMoment}
-              onSolve={runSolve}
-              onReset={handleReset}
-              solving={isPending}
-              disableSolveReason={disableSolveReason}
-            />
-            <section className="panel space-y-4 p-3 sm:p-4">
-              <div className="flex items-center justify-between">
-                <span className="tag">Yük Renkleri</span>
-              </div>
-              <div className="grid gap-3">
-                {LOAD_COLOR_OPTIONS.map(({ key, label }) => (
-                  <label
-                    key={key}
-                    className="flex items-center justify-between gap-3 text-xs font-medium text-slate-300"
+
+      {mode === "beam" ? (
+        <div className="mx-auto flex w-full max-w-none flex-col gap-4 px-4 pt-4 sm:px-6">
+          <div className="grid gap-6 xl:grid-cols-[380px_minmax(0,1fr)_380px]">
+            <div className="space-y-6">
+              <section className="panel space-y-3 p-3 sm:p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="tag">Ön Ayarlar</span>
+                  <button
+                    type="button"
+                    onClick={handleReset}
+                    className="rounded-full border border-slate-700/70 px-3 py-1 text-xs text-slate-300 transition hover:border-slate-500 hover:text-white"
                   >
-                    <span>{label}</span>
-                    <input
-                      type="color"
-                      className="h-8 w-12 cursor-pointer rounded border border-slate-700/70 bg-slate-800/60"
-                      value={loadColors[key]}
-                      onChange={(event) =>
-                        setLoadColors((prev) => ({
-                          ...prev,
-                          [key]: event.target.value,
-                        }))
-                      }
-                    />
+                    Varsayılana sıfırla
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  <label htmlFor="preset-select" className="text-xs font-semibold text-slate-300">
+                    Hazır şablon seçin
                   </label>
-                ))}
-              </div>
-            </section>
-          </div>
-
-          <div className="space-y-6">
-            <BeamSketch
-              length={length}
-              supports={sanitizedSupports}
-              pointLoads={sanitizedPointLoads}
-              udls={sanitizedUdls}
-              momentLoads={sanitizedMoments}
-              reactions={reactions}
-              loadColors={loadColors}
-              onSupportPositionChange={handleSupportPositionDrag}
-              onPointLoadPositionChange={handlePointLoadPositionDrag}
-              onUdlRangeChange={handleUdlRangeDrag}
-              onMomentPositionChange={handleMomentPositionDrag}
-              onOpenContextMenu={(target, clientX, clientY) => setContextMenu({ target, clientX, clientY })}
-              onPointLoadMagnitudeChange={handlePointLoadMagnitudeChange}
-              onUdlMagnitudeChange={handleUdlMagnitudeChange}
-              onMomentMagnitudeChange={handleMomentMagnitudeChange}
-            />
-            <BeamDiagrams
-              x={diagramData.x}
-              shear={diagramData.shear}
-              moment={diagramData.moment}
-              normal={diagramData.normal}
-              loading={isPending}
-              shearMarkers={shearMarkers}
-            />
-          </div>
-
-          <div className="panel space-y-6 p-6">
-            <div>
-              <span className="tag">Çözüm</span>
-              <p className="text-sm text-slate-400">Mesnet tepkileri ve denge kontrolü</p>
+                  <select
+                    id="preset-select"
+                    value={presetSelectValue}
+                    onChange={handlePresetChange}
+                    className="w-full rounded-lg border border-slate-700/80 bg-slate-900/70 px-3 py-2 text-sm text-slate-100 transition focus:border-cyan-400 focus:outline-none focus:ring-1 focus:ring-cyan-400"
+                  >
+                    <option value="custom" disabled={!!selectedPreset}>
+                      Özel yapılandırma
+                    </option>
+                    {PRESETS.map((preset) => (
+                      <option key={preset.key} value={preset.key}>
+                        {preset.title}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[11px] text-slate-400">
+                    {selectedPreset ? selectedPreset.description : "Parametrelerinizi özelleştirdiniz."}
+                  </p>
+                </div>
+              </section>
+              <BeamForm
+                beamType={beamType}
+                length={length}
+                onLengthChange={setLengthAndClear}
+                supports={supports}
+                onSupportChange={handleSupportChange}
+                onAddSupport={() => handleAddSupport()}
+                onRemoveSupport={handleRemoveSupport}
+                pointLoads={pointLoads}
+                onPointLoadChange={handlePointLoadChange}
+                onAddPointLoad={() => handleAddPointLoad()}
+                onRemovePointLoad={handleRemovePointLoad}
+                udls={udls}
+                onUdlChange={handleUdlChange}
+                onAddUdl={() => handleAddUdl()}
+                onRemoveUdl={handleRemoveUdl}
+                momentLoads={momentLoads}
+                onMomentChange={handleMomentChange}
+                onAddMoment={() => handleAddMoment()}
+                onRemoveMoment={handleRemoveMoment}
+                onSolve={runSolve}
+                onReset={handleReset}
+                solving={isPending}
+                disableSolveReason={disableSolveReason}
+              />
+              <section className="panel space-y-4 p-3 sm:p-4">
+                <div className="flex items-center justify-between">
+                  <span className="tag">Yük Renkleri</span>
+                </div>
+                <div className="grid gap-3">
+                  {LOAD_COLOR_OPTIONS.map(({ key, label }) => (
+                    <label
+                      key={key}
+                      className="flex items-center justify-between gap-3 text-xs font-medium text-slate-300"
+                    >
+                      <span>{label}</span>
+                      <input
+                        type="color"
+                        className="h-8 w-12 cursor-pointer rounded border border-slate-700/70 bg-slate-800/60"
+                        value={loadColors[key]}
+                        onChange={(event) =>
+                          setLoadColors((prev) => ({
+                            ...prev,
+                            [key]: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                  ))}
+                </div>
+              </section>
             </div>
 
             <div className="space-y-6">
-              {result?.meta.recommendation && (
-                <div className="panel-muted border border-cyan-500/30 bg-cyan-500/10 p-4 text-sm text-cyan-100">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-cyan-200/90">Tavsiye edilen yöntem</p>
-                  <p className="mt-1 text-base font-semibold text-cyan-100">{result.meta.recommendation.title}</p>
-                  <p className="mt-2 text-xs leading-relaxed text-cyan-100/90">{result.meta.recommendation.reason}</p>
-                  <p className="mt-3 text-[11px] text-cyan-200/70">Mesnet reaksiyonlarından sonra bu yöntemle devam edin.</p>
-                </div>
-              )}
+              <BeamSketch
+                length={length}
+                supports={sanitizedSupports}
+                pointLoads={sanitizedPointLoads}
+                udls={sanitizedUdls}
+                momentLoads={sanitizedMoments}
+                reactions={reactions}
+                loadColors={loadColors}
+                onSupportPositionChange={handleSupportPositionDrag}
+                onPointLoadPositionChange={handlePointLoadPositionDrag}
+                onUdlRangeChange={handleUdlRangeDrag}
+                onMomentPositionChange={handleMomentPositionDrag}
+                onOpenContextMenu={(target, clientX, clientY) => setContextMenu({ target, clientX, clientY })}
+                onPointLoadMagnitudeChange={handlePointLoadMagnitudeChange}
+                onUdlMagnitudeChange={handleUdlMagnitudeChange}
+                onMomentMagnitudeChange={handleMomentMagnitudeChange}
+              />
+              <BeamDiagrams
+                x={diagramData.x}
+                shear={diagramData.shear}
+                moment={diagramData.moment}
+                normal={diagramData.normal}
+                loading={isPending}
+                shearMarkers={shearMarkers}
+              />
+            </div>
 
-              {/* Detailed Solution Button */}
-              {result?.detailed_solutions && (
-                <button
-                  onClick={() => setIsDetailedSolutionOpen(true)}
-                  className="flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-cyan-500 to-blue-500 px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:from-cyan-600 hover:to-blue-600 hover:shadow-xl"
-                >
-                  <svg
-                    className="h-4 w-4"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                    />
-                  </svg>
-                  Çözümü Göster
-                </button>
-              )}
+            <div className="panel space-y-6 p-6">
+              <div>
+                <span className="tag">Çözüm</span>
+                <p className="text-sm text-slate-400">Mesnet tepkileri ve denge kontrolü</p>
+              </div>
 
-              {/* Results Section */}
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-semibold text-slate-300">Mesnet Tepkileri</h3>
-                  {result?.meta.solve_time_ms !== undefined && (
-                    <span className="rounded-full bg-slate-800/80 px-3 py-1 text-xs text-slate-300">
-                      {result.meta.solve_time_ms.toFixed(2)} ms
-                    </span>
-                  )}
-                </div>
-                {error ? (
-                  <div className="panel-muted border border-rose-500/40 bg-rose-500/10 p-4 text-sm text-rose-200">
-                    {error}
+              <div className="space-y-6">
+                {result?.meta.recommendation && (
+                  <div className="panel-muted border border-cyan-500/30 bg-cyan-500/10 p-4 text-sm text-cyan-100">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-cyan-200/90">Tavsiye edilen yöntem</p>
+                    <p className="mt-1 text-base font-semibold text-cyan-100">{result.meta.recommendation.title}</p>
+                    <p className="mt-2 text-xs leading-relaxed text-cyan-100/90">{result.meta.recommendation.reason}</p>
+                    <p className="mt-3 text-[11px] text-cyan-200/70">Mesnet reaksiyonlarından sonra bu yöntemle devam edin.</p>
                   </div>
-                ) : (
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    {reactions && reactions.length > 0 ? (
-                      reactions.map((reaction) => (
-                        <div key={reaction.support_id} className="panel-muted p-4">
-                          <p className="text-xs uppercase tracking-wide text-slate-400">
-                            R<sub>{reaction.support_id}</sub> ({reaction.support_type})
-                          </p>
-                          <p className="text-3xl font-semibold text-cyan-300">
-                            {reaction.vertical.toFixed(2)} kN
-                          </p>
-                          <p className="text-xs text-slate-500">x = {reaction.position.toFixed(2)} m</p>
-                        </div>
-                      ))
-                    ) : null}
-                    {reactions && reactions.length > 0 && (
-                      <div className="panel-muted col-span-full p-4 text-sm text-slate-300">
-                        <p className="font-medium text-slate-200">Denge kontrolü</p>
-                        <p>Tepki toplamı = {reactions.reduce((sum, r) => sum + (r.vertical ?? 0), 0).toFixed(2)} kN</p>
-                      </div>
+                )}
+
+                {result?.detailed_solutions && (
+                  <button
+                    onClick={() => setIsDetailedSolutionOpen(true)}
+                    className="flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-cyan-500 to-blue-500 px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:from-cyan-600 hover:to-blue-600 hover:shadow-xl"
+                  >
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    Çözümü Göster
+                  </button>
+                )}
+
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-semibold text-slate-300">Mesnet Tepkileri</h3>
+                    {result?.meta.solve_time_ms !== undefined && (
+                      <span className="rounded-full bg-slate-800/80 px-3 py-1 text-xs text-slate-300">
+                        {result.meta.solve_time_ms.toFixed(2)} ms
+                      </span>
                     )}
                   </div>
-                )}
+                  {error ? (
+                    <div className="panel-muted border border-rose-500/40 bg-rose-500/10 p-4 text-sm text-rose-200">
+                      {error}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      {reactions && reactions.length > 0 ? (
+                        reactions.map((reaction) => (
+                          <div key={reaction.support_id} className="panel-muted p-4">
+                            <p className="text-xs uppercase tracking-wide text-slate-400">
+                              R<sub>{reaction.support_id}</sub> ({reaction.support_type})
+                            </p>
+                            <p className="text-3xl font-semibold text-cyan-300">{reaction.vertical.toFixed(2)} kN</p>
+                            <p className="text-xs text-slate-500">x = {reaction.position.toFixed(2)} m</p>
+                          </div>
+                        ))
+                      ) : null}
+                      {reactions && reactions.length > 0 && (
+                        <div className="panel-muted col-span-full p-4 text-sm text-slate-300">
+                          <p className="font-medium text-slate-200">Denge kontrolü</p>
+                          <p>Tepki toplamı = {reactions.reduce((sum, r) => sum + (r.vertical ?? 0), 0).toFixed(2)} kN</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
-                {result?.meta.validation_warnings && result.meta.validation_warnings.length > 0 && (
-                  <div className="panel-muted border border-amber-400/40 bg-amber-500/10 p-4 text-xs text-amber-100">
-                    <p className="mb-2 font-semibold">Uyarılar</p>
-                    <ul className="space-y-2">
-                      {result.meta.validation_warnings.map((warning) => (
-                        <li key={warning}>- {warning}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
+                  {result?.meta.validation_warnings && result.meta.validation_warnings.length > 0 && (
+                    <div className="panel-muted border border-amber-400/40 bg-amber-500/10 p-4 text-xs text-amber-100">
+                      <p className="mb-2 font-semibold">Uyarılar</p>
+                      <ul className="space-y-2">
+                        {result.meta.validation_warnings.map((warning) => (
+                          <li key={warning}>- {warning}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
+      ) : (
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 pt-6 sm:px-6">
+          <section className="panel space-y-4 p-4 sm:p-6">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <span className="tag">Baca Periyodu</span>
+                <p className="text-sm text-slate-400">Temel titreşim periyodu (T1) için cantilever model</p>
+              </div>
+              <button
+                type="button"
+                onClick={resetChimney}
+                className="rounded-full border border-slate-700/70 px-3 py-1 text-xs text-slate-200 transition hover:border-cyan-400 hover:text-white"
+              >
+                Varsayılan değerler
+              </button>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              <label className="space-y-2 text-xs font-medium text-slate-300">
+                <span>Yükseklik H (m)</span>
+                <input
+                  type="number"
+                  min={1}
+                  step={0.5}
+                  className="w-full rounded-lg border border-slate-700/80 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
+                  value={chimneyInput.height_m}
+                  onChange={(e) => handleChimneyChange("height_m", Number(e.target.value))}
+                />
+              </label>
+              <label className="space-y-2 text-xs font-medium text-slate-300">
+                <span>E (GPa)</span>
+                <input
+                  type="number"
+                  min={1}
+                  step={0.5}
+                  className="w-full rounded-lg border border-slate-700/80 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
+                  value={chimneyInput.elastic_modulus_gpa}
+                  onChange={(e) => handleChimneyChange("elastic_modulus_gpa", Number(e.target.value))}
+                />
+              </label>
+              <label className="space-y-2 text-xs font-medium text-slate-300">
+                <span>Atalet Momenti I (m^4)</span>
+                <input
+                  type="number"
+                  min={0.01}
+                  step={0.01}
+                  className="w-full rounded-lg border border-slate-700/80 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
+                  value={chimneyInput.moment_inertia_m4}
+                  onChange={(e) => handleChimneyChange("moment_inertia_m4", Number(e.target.value))}
+                />
+              </label>
+              <label className="space-y-2 text-xs font-medium text-slate-300">
+                <span>Doğrusal kütle m (kg/m)</span>
+                <input
+                  type="number"
+                  min={1}
+                  step={10}
+                  className="w-full rounded-lg border border-slate-700/80 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
+                  value={chimneyInput.mass_per_length_kgm}
+                  onChange={(e) => handleChimneyChange("mass_per_length_kgm", Number(e.target.value))}
+                />
+              </label>
+              <label className="space-y-2 text-xs font-medium text-slate-300">
+                <span>Serbest uç kütlesi (kg)</span>
+                <input
+                  type="number"
+                  min={0}
+                  step={10}
+                  className="w-full rounded-lg border border-slate-700/80 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
+                  value={chimneyInput.tip_mass_kg}
+                  onChange={(e) => handleChimneyChange("tip_mass_kg", Number(e.target.value))}
+                />
+              </label>
+            </div>
+
+            <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={handleChimneySolve}
+                className="group relative overflow-hidden rounded-full bg-gradient-to-r from-emerald-400 to-cyan-500 px-6 py-2 text-sm font-semibold text-slate-950 transition hover:from-emerald-500 hover:to-cyan-400"
+              >
+                <span className="relative z-10 flex items-center gap-2">
+                  {isChimneyPending && <span className="inline-flex h-3 w-3 animate-ping rounded-full bg-slate-950 opacity-80" />}
+                  {isChimneyPending ? "Hesaplanıyor" : "Temel periyodu hesapla"}
+                </span>
+                <span className="absolute inset-0 -z-0 translate-y-full bg-white/40 transition group-hover:translate-y-0" />
+              </button>
+            </div>
+          </section>
+
+          <section className="panel space-y-4 p-4 sm:p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="tag">Sonuçlar</span>
+                <p className="text-sm text-slate-400">T1, f1 ve ana katsayılar</p>
+              </div>
+              {chimneyResult && (
+                <span className="rounded-full bg-slate-800/80 px-3 py-1 text-[11px] text-slate-200">
+                  λ1 = {chimneyResult.mode_constant.toFixed(3)}
+                </span>
+              )}
+            </div>
+
+            {chimneyError && (
+              <div className="panel-muted border border-rose-500/40 bg-rose-500/10 p-4 text-sm text-rose-200">{chimneyError}</div>
+            )}
+
+            {chimneyResult ? (
+              <div className="grid gap-4 md:grid-cols-3">
+                <div className="panel-muted border border-emerald-500/30 bg-emerald-500/10 p-4">
+                  <p className="text-xs uppercase tracking-wide text-emerald-200">Temel Periyot</p>
+                  <p className="text-3xl font-bold text-emerald-100">{chimneyResult.period_s.toFixed(3)} s</p>
+                  <p className="text-xs text-emerald-200/80">T1 = 2π / ω1</p>
+                </div>
+                <div className="panel-muted border border-cyan-500/30 bg-cyan-500/10 p-4">
+                  <p className="text-xs uppercase tracking-wide text-cyan-200">Doğal Frekans</p>
+                  <p className="text-3xl font-bold text-cyan-100">{chimneyResult.frequency_hz.toFixed(3)} Hz</p>
+                  <p className="text-xs text-cyan-200/80">ω1 = {chimneyResult.angular_frequency_rad_s.toFixed(2)} rad/sn</p>
+                </div>
+                <div className="panel-muted border border-blue-500/30 bg-blue-500/10 p-4">
+                  <p className="text-xs uppercase tracking-wide text-blue-200">Stiffness & kütle</p>
+                  <p className="text-lg font-semibold text-blue-100">EI = {(chimneyResult.flexural_rigidity_n_m2 / 1e9).toFixed(2)} GN•m²</p>
+                  <p className="text-xs text-blue-200/80">mef = {chimneyResult.effective_mass_kgm.toFixed(1)} kg/m</p>
+                </div>
+              </div>
+            ) : (
+              <div className="panel-muted border border-slate-700/70 bg-slate-900/60 p-4 text-sm text-slate-300">
+                Parametreleri girip “Temel periyodu hesapla” butonuna tıklayın.
+              </div>
+            )}
+
+            {chimneyResult && chimneyResult.notes.length > 0 && (
+              <div className="space-y-2 rounded-xl border border-slate-700/70 bg-slate-900/70 p-4 text-xs text-slate-200">
+                {chimneyResult.notes.map((note) => (
+                  <p key={note}>• {note}</p>
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
+      )}
 
       {contextMenu && (
         <div

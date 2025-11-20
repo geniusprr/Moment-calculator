@@ -69,8 +69,8 @@ export function BeamForm({
   const maxSupports = beamType === "cantilever" ? 1 : 2;
   const supportHint =
     beamType === "cantilever"
-      ? "Konsol ��z��m i��in tek ankastre mesnet gerekir (x=0 veya x=L)."
-      : "Statik ��z��m i��in tam olarak iki mesnet gereklidir.";
+      ? "Konsol çözüm için tek ankastre mesnet gerekir (x=0 veya x=L)."
+      : "Statik çözüm için tam olarak iki mesnet gereklidir.";
   return (
     <div className="panel space-y-6 p-6">
       <div className="flex items-center justify-between">

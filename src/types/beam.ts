@@ -158,6 +158,25 @@ export interface MethodRecommendation {
   reason: string;
 }
 
+// Chimney dynamic period
+export interface ChimneyPeriodRequest {
+  height_m: number;
+  elastic_modulus_gpa: number;
+  moment_inertia_m4: number;
+  mass_per_length_kgm: number;
+  tip_mass_kg?: number;
+}
+
+export interface ChimneyPeriodResponse {
+  period_s: number;
+  frequency_hz: number;
+  angular_frequency_rad_s: number;
+  flexural_rigidity_n_m2: number;
+  effective_mass_kgm: number;
+  mode_constant: number;
+  notes: string[];
+}
+
 export interface BeamSolveResponse {
   reactions: SupportReaction[];
   diagram: {
