@@ -469,7 +469,7 @@ export function BeamSketch({
   }, [length, momentLoads, pointLoads, supports, udls]);
 
   const UDL_AREA_HEIGHT = 64;
-  const UDL_TOP = `calc(50% - ${15 + UDL_AREA_HEIGHT}px)`;
+  const UDL_TOP = `calc(50% - ${12 + UDL_AREA_HEIGHT}px)`;
   const UDL_ARROW_HEAD_HEIGHT = 12;
   const UDL_ARROW_BODY_HEIGHT = UDL_AREA_HEIGHT - UDL_ARROW_HEAD_HEIGHT;
   const UDL_ARROW_WIDTH = 18;
@@ -483,37 +483,74 @@ export function BeamSketch({
         openContextMenu(event, { kind: "blank", x });
       }}
     >
-      <div ref={containerRef} className="relative h-56 select-none rounded-xl border border-slate-800/60 bg-slate-900/60">
-        {/* Simplified beam bar - positioned in middle */}
-        <div className="absolute left-[2%] right-[2%] h-3 rounded bg-slate-200/80 shadow-sm" style={{ top: 'calc(50% - 15px)' }} />
+      <div ref={containerRef} className="relative h-64 select-none">
+        {/* Realistic Steel Beam (I-Profile) */}
+        <div
+          className="absolute left-[2%] right-[2%] h-6 flex flex-col shadow-md"
+          style={{ top: 'calc(50% - 12px)' }}
+        >
+          <div className="h-1 w-full bg-slate-500 rounded-t-sm" /> {/* Top flange */}
+          <div className="flex-1 w-full bg-gradient-to-b from-slate-300 via-slate-200 to-slate-300 border-x border-slate-300/50" /> {/* Web */}
+          <div className="h-1 w-full bg-slate-500 rounded-b-sm" /> {/* Bottom flange */}
+        </div>
 
         {/* Simplified support markers - below the beam, tip touching it */}
-        {supportMarkers.map((support) => (
-          <div
-            key={support.id}
-            className="absolute flex translate-x-[-50%] flex-col items-center gap-1"
-            style={{ left: `${2 + (support.percent * 0.96)}%`, top: 'calc(50% - 3px)' }}
-            onContextMenu={(event) => openContextMenu(event, { kind: "support", id: support.id, x: support.position })}
-          >
+        {supportMarkers.map((support) => {
+          const isRight = support.percent > 50;
+          return (
             <div
-              className="cursor-ew-resize"
-              onPointerDown={beginDrag({ type: "support", id: support.id })}
-              title={support.reaction ? `Düşey=${support.reaction.vertical.toFixed(2)} kN${Math.abs(support.reaction.axial) > 1e-3 ? `, Yatay=${support.reaction.axial.toFixed(2)} kN` : ""}` : ""}
+              key={support.id}
+              className="absolute flex translate-x-[-50%] flex-col items-center gap-1"
+              style={{
+                left: support.type === "fixed"
+                  ? (isRight ? `calc(${2 + (support.percent * 0.96)}% + 8px)` : `calc(${2 + (support.percent * 0.96)}% - 8px)`)
+                  : `${2 + (support.percent * 0.96)}%`,
+                top: support.type === "fixed" ? 'calc(50% - 70px)' : 'calc(50% + 12px)'
+              }}
+              onContextMenu={(event) => openContextMenu(event, { kind: "support", id: support.id, x: support.position })}
             >
-              {/* Larger support symbol */}
-              <div className="h-0 w-0 border-x-[14px] border-b-[22px] border-x-transparent border-b-cyan-400" />
-              <div className="mx-auto h-1.5 w-7 rounded-b bg-slate-600" />
+              {support.type === "fixed" && <span className="text-xs font-semibold text-cyan-200 mb-1">{support.id}</span>}
+
+              <div
+                className="cursor-ew-resize"
+                onPointerDown={beginDrag({ type: "support", id: support.id })}
+                title={support.reaction ? `Düşey=${support.reaction.vertical.toFixed(2)} kN${Math.abs(support.reaction.axial) > 1e-3 ? `, Yatay=${support.reaction.axial.toFixed(2)} kN` : ""}` : ""}
+              >
+                {support.type === "fixed" ? (
+                  <div className="relative flex items-center justify-center">
+                    {/* Wall - Concrete look */}
+                    <div className="h-24 w-4 rounded-sm bg-[#9ca3af] border-2 border-[#4b5563] shadow-xl" />
+                    {/* Hatching hints */}
+                    <div
+                      className={`absolute top-0 bottom-0 flex w-4 flex-col justify-between py-2 ${isRight ? "-right-4" : "-left-4"}`}
+                    >
+                      {[...Array(10)].map((_, i) => (
+                        <div
+                          key={i}
+                          className={`h-0.5 w-full bg-[#6b7280] ${isRight ? "rotate-[45deg]" : "rotate-[-45deg]"}`}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {/* Larger support symbol */}
+                    <div className="h-0 w-0 border-x-[14px] border-b-[22px] border-x-transparent border-b-cyan-400" />
+                    <div className="mx-auto h-1.5 w-7 rounded-b bg-slate-600" />
+                  </>
+                )}
+              </div>
+              {support.type !== "fixed" && <span className="text-xs font-semibold text-cyan-200">{support.id}</span>}
             </div>
-            <span className="text-xs font-semibold text-cyan-200">{support.id}</span>
-          </div>
-        ))}
+          );
+        })}
 
         {/* Simplified point loads - above the beam, touching it */}
         {pointHandles.map((load) => (
           <div
             key={load.id}
             className="absolute flex translate-x-[-50%] flex-col items-center cursor-ew-resize z-40"
-            style={{ left: `${2 + (load.percent * 0.96)}%`, bottom: 'calc(50% + 18px)' }}
+            style={{ left: `${2 + (load.percent * 0.96)}%`, bottom: 'calc(50% + 12px)' }}
             onContextMenu={(event) => openContextMenu(event, { kind: "point", id: load.id, x: load.position })}
             onPointerDown={beginDrag({ type: "point", id: load.id })}
           >
@@ -741,7 +778,7 @@ export function BeamSketch({
           <div
             key={moment.id}
             className="absolute flex translate-x-[-50%] flex-col items-center gap-1 cursor-ew-resize z-40"
-            style={{ left: `${2 + (moment.percent * 0.96)}%`, bottom: 'calc(50% + 21px)' }}
+            style={{ left: `${2 + (moment.percent * 0.96)}%`, bottom: 'calc(50% + 14px)' }}
             onContextMenu={(event) => openContextMenu(event, { kind: "moment", id: moment.id, x: moment.position })}
             onPointerDown={beginDrag({ type: "moment", id: moment.id })}
           >
@@ -807,12 +844,12 @@ export function BeamSketch({
               {/* Start vertical line */}
               <div
                 className="absolute w-0.5 h-8 bg-slate-400"
-                style={{ left: `${2 + startPercent * 0.96}%`, top: "calc(50% + 45px)" }}
+                style={{ left: `${2 + startPercent * 0.96}%`, top: "calc(50% + 60px)" }}
               />
               {/* End vertical line */}
               <div
                 className="absolute w-0.5 h-8 bg-slate-400"
-                style={{ left: `${2 + endPercent * 0.96}%`, top: "calc(50% + 45px)" }}
+                style={{ left: `${2 + endPercent * 0.96}%`, top: "calc(50% + 60px)" }}
               />
               {/* Horizontal dimension line */}
               <div
@@ -820,13 +857,13 @@ export function BeamSketch({
                 style={{
                   left: `${2 + startPercent * 0.96}%`,
                   width: `${(endPercent - startPercent) * 0.96}%`,
-                  top: "calc(50% + 53px)"
+                  top: "calc(50% + 68px)"
                 }}
               />
               {/* Distance text */}
               <span
                 className="absolute text-xs font-medium text-slate-300 bg-slate-800/80 px-1.5 py-0.5 rounded"
-                style={{ left: `${2 + midPercent * 0.96}%`, transform: "translateX(-50%)", top: "calc(50% + 58px)" }}
+                style={{ left: `${2 + midPercent * 0.96}%`, transform: "translateX(-50%)", top: "calc(50% + 73px)" }}
               >
                 {text}
               </span>
