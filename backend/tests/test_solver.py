@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from pydantic import ValidationError
 from pytest import approx, raises
@@ -75,7 +75,8 @@ def test_horizontal_load_generates_axial_reaction():
     assert reactions["B"].axial == approx(0.0, abs=1e-6)
     assert min(result.diagram.normal) == approx(-8.0, rel=1e-3)
     assert all(abs(value) < 1e-6 for value in result.diagram.shear)
-    assert result.meta.recommendation.method == "shear"
+    # Simplified solver always recommends area method
+    assert result.meta.recommendation.method == "area"
 
 
 def test_concentrated_moment_effect():
@@ -115,7 +116,8 @@ def test_triangular_increasing_distributed_load():
 
     assert reactions["A"].vertical == approx(6.0, rel=1e-3)
     assert reactions["B"].vertical == approx(12.0, rel=1e-3)
-    assert result.meta.recommendation.method == "shear"
+    # Simplified solver always recommends area method
+    assert result.meta.recommendation.method == "area"
     assert max(result.diagram.moment) == approx(13.86, rel=1e-1)
 
 
@@ -132,7 +134,8 @@ def test_area_method_recommended_for_vertical_point_loads():
     result = solve_beam(request)
 
     assert result.meta.recommendation.method == "area"
-    assert "alan" in result.meta.recommendation.reason.lower()
+    # Updated reason text
+    assert "standart" in result.meta.recommendation.reason.lower()
 
 
 def test_invalid_point_load_position():

@@ -1,6 +1,6 @@
 ﻿from __future__ import annotations
 
-from typing import List, Literal, Optional
+from typing import List, Literal, Optional, Any
 
 from pydantic import BaseModel, Field, ValidationInfo, model_validator
 
@@ -9,6 +9,7 @@ Direction = Literal["down", "up"]
 MomentDirection = Literal["ccw", "cw"]
 DistributedLoadShape = Literal["uniform", "triangular_increasing", "triangular_decreasing"]
 BeamType = Literal["simply_supported", "cantilever"]
+AreaTrend = Literal["increase", "decrease", "constant"]
 
 
 class Support(BaseModel):
@@ -54,27 +55,27 @@ class SolveRequest(BaseModel):
 
         if self.beam_type == "simply_supported":
             if len(self.supports) != 2:
-                raise ValueError("Basit kiri� i�in tam olarak iki mesnet tan�mlanmal�d�r.")
+                raise ValueError("Basit kiris icin tam olarak iki mesnet tanimlanmalidir.")
 
             positions = sorted(support.position for support in self.supports)
             if positions[0] < 0 or positions[1] > length:
-                raise ValueError("Mesnet konumlar� kiri� boyu i�inde olmal�d�r.")
+                raise ValueError("Mesnet konumlari kiris boyu icinde olmalidir.")
             if abs(positions[0] - positions[1]) < 1e-6:
-                raise ValueError("Mesnet konumlar� ayr� olmal�d�r.")
+                raise ValueError("Mesnet konumlari ayri olmalidir.")
 
             invalid_fixed = [support for support in self.supports if support.type == "fixed"]
             if invalid_fixed:
-                raise ValueError("Basit kiri� se�ene�inde ankastre (fixed) mesnet kullan�lamaz.")
+                raise ValueError("Basit kiris seceneginde ankastre (fixed) mesnet kullanilamaz.")
         else:
             if len(self.supports) != 1:
-                raise ValueError("Konsol kiri� i�in tek bir ankastre mesnet gereklidir.")
+                raise ValueError("Konsol kiris icin tek bir ankastre mesnet gereklidir.")
 
             only_support = self.supports[0]
             if only_support.type != "fixed":
-                raise ValueError("Konsol kiri� i�in mesnet tipi 'fixed' olmal�d�r.")
+                raise ValueError("Konsol kiris icin mesnet tipi fixed olmalidir.")
 
             if not (abs(only_support.position) < 1e-9 or abs(only_support.position - length) < 1e-9):
-                raise ValueError("Konsol mesneti kiri�in ba�lang�c�nda veya ucunda olmal�d�r (x=0 veya x=L).")
+                raise ValueError("Konsol mesneti kirisin baslangicinda veya ucunda olmalidir (x=0 veya x=L).")
 
         for load in self.point_loads:
             if not 0 <= load.position <= length:
@@ -127,42 +128,7 @@ class SolveMeta(BaseModel):
     max_absolute_position: Optional[float] = None
 
 
-class BeamSupportInfo(BaseModel):
-    id: str
-    type: SupportType
-    position: float
-
-
-class BeamPointLoadInfo(BaseModel):
-    id: str
-    magnitude: float
-    position: float
-    angle_deg: float
-
-
-class BeamDistributedLoadInfo(BaseModel):
-    id: str
-    magnitude: float
-    start: float
-    end: float
-    direction: Direction
-    shape: DistributedLoadShape
-
-
-class BeamMomentLoadInfo(BaseModel):
-    id: str
-    magnitude: float
-    position: float
-    direction: MomentDirection
-
-
-class BeamContext(BaseModel):
-    length: float
-    supports: List[BeamSupportInfo]
-    point_loads: List[BeamPointLoadInfo]
-    udls: List[BeamDistributedLoadInfo]
-    moment_loads: List[BeamMomentLoadInfo]
-
+# --- Detailed Solution Types ---
 
 class BeamSectionHighlight(BaseModel):
     start: float
@@ -183,7 +149,7 @@ class MomentSegmentSamples(BaseModel):
 class AreaMethodVisualization(BaseModel):
     shape: str
     area_value: float
-    trend: Literal["increase", "decrease", "constant"]
+    trend: AreaTrend
     region: ShearRegionSamples
     moment_segment: MomentSegmentSamples
 
@@ -192,8 +158,8 @@ class SolutionStep(BaseModel):
     step_number: int
     title: str
     explanation: str
-    general_formula: Optional[str] = None  # Genel formül (LaTeX)
-    substituted_formula: Optional[str] = None  # Değerlerin yerine konulmuş hali (LaTeX)
+    general_formula: Optional[str] = None
+    substituted_formula: Optional[str] = None
     numerical_result: Optional[str] = None
     beam_section: Optional[BeamSectionHighlight] = None
     area_visualization: Optional[AreaMethodVisualization] = None
@@ -208,9 +174,17 @@ class SolutionMethod(BaseModel):
     steps: List[SolutionStep]
 
 
+class BeamContext(BaseModel):
+    length: float
+    supports: List[Support]
+    point_loads: List[PointLoad]
+    udls: List[UniformDistributedLoad]
+    moment_loads: List[MomentLoad]
+
+
 class DetailedSolution(BaseModel):
     methods: List[SolutionMethod]
-    diagram: Optional[DiagramData] = None  # Grafik verileri çözüm adımlarında gösterilmek üzere
+    diagram: Optional[DiagramData] = None
     beam_context: Optional[BeamContext] = None
 
 
@@ -220,3 +194,4 @@ class SolveResponse(BaseModel):
     derivations: List[str]
     meta: SolveMeta
     detailed_solutions: Optional[DetailedSolution] = None
+

@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { BlockMath } from "react-katex";
 import clsx from "clsx";
-import type { DetailedSolution } from "@/types/beam";
+import { motion, AnimatePresence } from "framer-motion";
+import type { DetailedSolution, SolutionMethod } from "@/types/beam";
 import { BeamSectionDiagram } from "./BeamSectionDiagram";
 import { AreaMethodDiagram } from "./AreaMethodDiagram";
 
@@ -13,409 +14,331 @@ interface DetailedSolutionPanelProps {
     onClose: () => void;
 }
 
+type ViewState = "reactions" | "selection" | "method";
+
 export function DetailedSolutionPanel({
     detailedSolution,
     isOpen,
     onClose,
 }: DetailedSolutionPanelProps) {
-    const [activeMethodIndex, setActiveMethodIndex] = useState(0);
-    const [expandedSteps, setExpandedSteps] = useState<Set<number>>(new Set([0]));
+    const [viewState, setViewState] = useState<ViewState>("reactions");
+    const [currentStepIndex, setCurrentStepIndex] = useState(0);
+    const [selectedMethodIndex, setSelectedMethodIndex] = useState<number | null>(null);
 
-    // Handle ESC key to close
-    useEffect(() => {
-        if (!isOpen) return;
+    // Find the support reactions method (usually the first one)
+    const reactionsMethod = detailedSolution.methods.find(
+        (m) => m.method_name === "support_reactions"
+    );
 
-        const handleEsc = (event: KeyboardEvent) => {
-            if (event.key === "Escape") {
-                onClose();
-            }
-        };
+    // Other methods for selection
+    const solverMethods = detailedSolution.methods.filter(
+        (m) => m.method_name !== "support_reactions"
+    );
 
-        window.addEventListener("keydown", handleEsc);
-        return () => window.removeEventListener("keydown", handleEsc);
-    }, [isOpen, onClose]);
-
-    // Prevent scroll when open
+    // Reset state when opening
     useEffect(() => {
         if (isOpen) {
+            setViewState("reactions");
+            setCurrentStepIndex(0);
+            setSelectedMethodIndex(null);
             document.body.style.overflow = "hidden";
         } else {
             document.body.style.overflow = "";
         }
-
         return () => {
             document.body.style.overflow = "";
         };
     }, [isOpen]);
 
-    // Reset to first method when opening
+    // Handle ESC
     useEffect(() => {
-        if (isOpen) {
-            setActiveMethodIndex(0);
-            setExpandedSteps(new Set([0]));
-        }
-    }, [isOpen]);
+        if (!isOpen) return;
+        const handleEsc = (e: KeyboardEvent) => {
+            if (e.key === "Escape") onClose();
+        };
+        window.addEventListener("keydown", handleEsc);
+        return () => window.removeEventListener("keydown", handleEsc);
+    }, [isOpen, onClose]);
 
-    const toggleStep = (stepNumber: number) => {
-        setExpandedSteps((prev) => {
-            const next = new Set(prev);
-            if (next.has(stepNumber)) {
-                next.delete(stepNumber);
-            } else {
-                next.add(stepNumber);
-            }
-            return next;
-        });
-    };
+    if (!isOpen || !reactionsMethod) return null;
 
-    const expandAll = () => {
-        const allSteps = new Set(
-            detailedSolution.methods[activeMethodIndex].steps.map((s) => s.step_number)
-        );
-        setExpandedSteps(allSteps);
-    };
+    const activeMethod =
+        viewState === "reactions"
+            ? reactionsMethod
+            : viewState === "method" && selectedMethodIndex !== null
+                ? detailedSolution.methods[selectedMethodIndex]
+                : null;
 
-    const collapseAll = () => {
-        setExpandedSteps(new Set());
-    };
-
-    if (!isOpen) return null;
-
-    const activeMethod = detailedSolution.methods[activeMethodIndex];
+    const totalSteps = activeMethod ? activeMethod.steps.length : 0;
+    const currentStep = activeMethod ? activeMethod.steps[currentStepIndex] : null;
     const beamContext = detailedSolution.beam_context;
-    const recommendedMethod = detailedSolution.methods.find(
-        (method) => method.recommended && method.method_name !== "support_reactions"
-    ) ?? detailedSolution.methods.find((method) => method.recommended);
+
+    const handleNext = () => {
+        if (viewState === "reactions") {
+            if (currentStepIndex < totalSteps - 1) {
+                setCurrentStepIndex((prev) => prev + 1);
+            } else {
+                setViewState("selection");
+            }
+        } else if (viewState === "method") {
+            if (currentStepIndex < totalSteps - 1) {
+                setCurrentStepIndex((prev) => prev + 1);
+            }
+        }
+    };
+
+    const handlePrev = () => {
+        if (viewState === "reactions") {
+            if (currentStepIndex > 0) {
+                setCurrentStepIndex((prev) => prev - 1);
+            }
+        } else if (viewState === "selection") {
+            setViewState("reactions");
+            setCurrentStepIndex(reactionsMethod.steps.length - 1);
+        } else if (viewState === "method") {
+            if (currentStepIndex > 0) {
+                setCurrentStepIndex((prev) => prev - 1);
+            } else {
+                setViewState("selection");
+                setSelectedMethodIndex(null);
+            }
+        }
+    };
+
+    const handleMethodSelect = (method: SolutionMethod) => {
+        const index = detailedSolution.methods.findIndex(
+            (m) => m.method_name === method.method_name
+        );
+        setSelectedMethodIndex(index);
+        setViewState("method");
+        setCurrentStepIndex(0);
+    };
 
     return (
-        <>
-            {/* Backdrop */}
-            <div
-                className={clsx(
-                    "fixed inset-0 z-40 bg-slate-950/80 backdrop-blur-sm transition-opacity duration-300",
-                    isOpen ? "opacity-100" : "opacity-0"
-                )}
-                onClick={onClose}
-            />
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 backdrop-blur-md">
+            <div className="relative flex h-full w-full flex-col overflow-hidden bg-slate-900 text-slate-100 md:h-[90vh] md:w-[90vw] md:rounded-2xl md:border md:border-slate-800 md:shadow-2xl">
+                {/* Header */}
+                <div className="flex items-center justify-between border-b border-slate-800 bg-slate-900 px-6 py-4">
+                    <div>
+                        <h2 className="text-xl font-bold text-cyan-400">
+                            {viewState === "reactions"
+                                ? "Adım 1: Mesnet Tepkileri"
+                                : viewState === "selection"
+                                    ? "Adım 2: Yöntem Seçimi"
+                                    : `Adım 3: ${activeMethod?.method_title}`}
+                        </h2>
+                        <p className="text-sm text-slate-400">
+                            {viewState === "selection"
+                                ? "Devam etmek için bir çözüm yöntemi seçiniz."
+                                : `Adım ${currentStepIndex + 1} / ${totalSteps}`}
+                        </p>
+                    </div>
+                    <button
+                        onClick={onClose}
+                        className="rounded-full p-2 text-slate-400 hover:bg-slate-800 hover:text-white"
+                    >
+                        <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M6 18L18 6M6 6l12 12"
+                            />
+                        </svg>
+                    </button>
+                </div>
 
-            {/* Panel */}
-            <div
-                className={clsx(
-                    "fixed inset-0 z-50 transform transition-transform duration-300 ease-out",
-                    isOpen ? "translate-x-0" : "translate-x-full"
-                )}
-            >
-                <div className="flex h-full w-full flex-col bg-slate-900">
-                    {/* Header */}
-                    <div className="flex items-center justify-between border-b border-slate-800 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 px-6 py-4">
-                        <div>
-                            <h2 className="text-2xl font-bold text-slate-100">Detaylı Çözüm</h2>
-                            <p className="text-sm text-slate-400">
-                                Farklı yöntemlerle adım adım kiriş analizi
-                            </p>
-                        </div>
-                        <button
-                            onClick={onClose}
-                            className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-800 text-slate-300 transition hover:bg-slate-700 hover:text-white"
-                            aria-label="Kapat"
-                        >
-                            <svg
-                                className="h-6 w-6"
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
+                {/* Main Content Area */}
+                <div className="flex-1 overflow-hidden relative">
+                    <AnimatePresence mode="wait">
+                        {viewState === "selection" ? (
+                            <motion.div
+                                key="selection"
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: -20 }}
+                                className="flex h-full flex-col items-center justify-center p-8"
                             >
-                                <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    strokeWidth={2}
-                                    d="M6 18L18 6M6 6l12 12"
-                                />
-                            </svg>
-                        </button>
-                    </div>
-
-                    {/* Method Tabs */}
-                    <div className="border-b border-slate-800 bg-slate-900/50 px-6">
-                        <div className="flex gap-2 overflow-x-auto">
-                            {detailedSolution.methods.map((method, index) => (
-                                <button
-                                    key={method.method_name}
-                                    onClick={() => {
-                                        setActiveMethodIndex(index);
-                                        setExpandedSteps(new Set([0]));
-                                    }}
-                                    className={clsx(
-                                        "whitespace-nowrap border-b-2 px-4 py-3 text-sm font-medium transition",
-                                        activeMethodIndex === index
-                                            ? "border-cyan-400 text-cyan-400"
-                                            : "border-transparent text-slate-400 hover:border-slate-600 hover:text-slate-200"
-                                    )}
-                                >
-                                    {method.method_title}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Content */}
-                    <div className="flex-1 overflow-y-auto px-6 py-6">
-                        <div className="mx-auto max-w-5xl space-y-6">
-                            {/* Recommendation Overview (only for support reactions) */}
-                            {activeMethod.method_name === "support_reactions" && (
-                                <div className="panel border border-cyan-500/20 bg-slate-900/70 p-6">
-                                    <div className="flex flex-wrap items-center justify-between gap-3">
-                                        <div>
-                                            <p className="text-xs font-semibold uppercase tracking-wide text-cyan-300">Yöntem Seçim Rehberi</p>
-                                            <p className="text-sm text-slate-300">
-                                                Hangi yöntemi ne zaman tercih edeceğinizi aşağıdaki özetten görebilirsiniz.
+                                <h3 className="mb-8 text-3xl font-bold text-white">
+                                    Nasıl devam etmek istersiniz?
+                                </h3>
+                                <div className="grid w-full max-w-5xl grid-cols-1 gap-6 md:grid-cols-3">
+                                    {solverMethods.map((method) => (
+                                        <button
+                                            key={method.method_name}
+                                            onClick={() => handleMethodSelect(method)}
+                                            className={clsx(
+                                                "group relative flex flex-col items-start rounded-xl border p-6 text-left transition-all hover:scale-105 hover:shadow-xl",
+                                                method.recommended
+                                                    ? "border-cyan-500/50 bg-cyan-500/10 hover:bg-cyan-500/20"
+                                                    : "border-slate-700 bg-slate-800/50 hover:bg-slate-800"
+                                            )}
+                                        >
+                                            {method.recommended && (
+                                                <span className="absolute -top-3 right-4 rounded-full bg-cyan-500 px-3 py-1 text-xs font-bold text-slate-900 shadow-lg">
+                                                    ÖNERİLEN
+                                                </span>
+                                            )}
+                                            <h4 className="mb-2 text-xl font-bold text-slate-100 group-hover:text-cyan-300">
+                                                {method.method_title}
+                                            </h4>
+                                            <p className="mb-4 text-sm text-slate-400">
+                                                {method.description}
                                             </p>
+                                            {method.recommendation_reason && (
+                                                <div className="mt-auto rounded bg-slate-900/50 p-3 text-xs text-cyan-200/80">
+                                                    <span className="font-bold text-cyan-500">Neden? </span>
+                                                    {method.recommendation_reason}
+                                                </div>
+                                            )}
+                                        </button>
+                                    ))}
+                                </div>
+                            </motion.div>
+                        ) : (
+                            currentStep && (
+                                <motion.div
+                                    key={`${viewState}-${currentStep.step_number}`}
+                                    initial={{ opacity: 0, x: 50 }}
+                                    animate={{ opacity: 1, x: 0 }}
+                                    exit={{ opacity: 0, x: -50 }}
+                                    transition={{ duration: 0.3 }}
+                                    className="flex h-full flex-col gap-8 overflow-y-auto p-8 md:flex-row"
+                                >
+                                    {/* Left Side: Text & Formulas */}
+                                    <div className="flex flex-1 flex-col justify-center space-y-8">
+                                        <div>
+                                            <h3 className="mb-4 text-3xl font-bold text-white">
+                                                {currentStep.title}
+                                            </h3>
+                                            <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-6 text-lg leading-relaxed text-slate-200 shadow-sm">
+                                                {currentStep.explanation}
+                                            </div>
                                         </div>
-                                        {recommendedMethod && (
-                                            <span className="rounded-full bg-cyan-500/20 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-cyan-200">
-                                                Önerilen: {recommendedMethod.method_title}
-                                            </span>
-                                        )}
-                                    </div>
-                                    <div className="mt-4 space-y-3">
-                                        {detailedSolution.methods
-                                            .filter((method) => method.method_name !== "support_reactions")
-                                            .map((method) => (
-                                                <div
-                                                    key={`summary-${method.method_name}`}
-                                                    className={clsx(
-                                                        "rounded-lg border px-4 py-3",
-                                                        method.recommended
-                                                            ? "border-cyan-500/40 bg-cyan-500/10"
-                                                            : "border-slate-700/60 bg-slate-800/40"
-                                                    )}
-                                                >
-                                                    <div className="flex items-start justify-between gap-3">
-                                                        <div>
-                                                            <p className="text-sm font-semibold text-slate-100">{method.method_title}</p>
-                                                            {method.recommendation_reason && (
-                                                                <p className="mt-1 text-xs leading-relaxed text-slate-300">
-                                                                    {method.recommendation_reason}
-                                                                </p>
-                                                            )}
-                                                        </div>
-                                                        {method.recommended && (
-                                                            <span className="rounded-full bg-cyan-500 px-3 py-1 text-xs font-semibold text-slate-900">
-                                                                Tavsiye edilir
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            ))}
-                                    </div>
-                                </div>
-                            )}
 
-                            {/* Method Description */}
-                            <div className="panel p-6">
-                                <div className="mb-2 flex items-center gap-2">
-                                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-cyan-500/20">
-                                        <svg
-                                            className="h-5 w-5 text-cyan-400"
-                                            fill="none"
-                                            stroke="currentColor"
-                                            viewBox="0 0 24 24"
-                                        >
-                                            <path
-                                                strokeLinecap="round"
-                                                strokeLinejoin="round"
-                                                strokeWidth={2}
-                                                d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                                            />
-                                        </svg>
-                                    </div>
-                                    <div className="flex items-center gap-3">
-                                        <h3 className="text-lg font-semibold text-slate-100">
-                                            {activeMethod.method_title}
-                                        </h3>
-                                    </div>
-                                </div>
-                                <p className="text-slate-300">{activeMethod.description}</p>
-                                {activeMethod.recommendation_reason && (
-                                    <div className="mt-4 rounded-lg border border-cyan-500/20 bg-cyan-500/10 p-4">
-                                        <p className="text-xs font-semibold uppercase tracking-wide text-cyan-200">
-                                            Tercih sebebi
-                                        </p>
-                                        <p className="mt-1 text-sm leading-relaxed text-slate-100">
-                                            {activeMethod.recommendation_reason}
-                                        </p>
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Diagram panel removed for shear and area methods as requested */}
-
-                            {/* Controls */}
-                            <div className="flex justify-end gap-2">
-                                <button
-                                    onClick={expandAll}
-                                    className="rounded-lg border border-slate-700 bg-slate-800/50 px-3 py-1.5 text-xs text-slate-300 transition hover:bg-slate-700"
-                                >
-                                    Tümünü Aç
-                                </button>
-                                <button
-                                    onClick={collapseAll}
-                                    className="rounded-lg border border-slate-700 bg-slate-800/50 px-3 py-1.5 text-xs text-slate-300 transition hover:bg-slate-700"
-                                >
-                                    Tümünü Kapat
-                                </button>
-                            </div>
-
-                            {/* Steps */}
-                            <div className="space-y-4">
-                                {activeMethod.steps.map((step) => {
-                                    const isExpanded = expandedSteps.has(step.step_number);
-                                    const hasBeamHighlight = Boolean(step.beam_section && beamContext);
-                                    const hasAreaVisualization = Boolean(step.area_visualization && detailedSolution.diagram);
-
-                                    return (
-                                        <div
-                                            key={step.step_number}
-                                            className="panel overflow-hidden border border-slate-800/60"
-                                        >
-                                            {/* Step Header */}
-                                            <button
-                                                onClick={() => toggleStep(step.step_number)}
-                                                className="flex w-full items-center justify-between bg-slate-800/30 px-6 py-4 text-left transition hover:bg-slate-800/50"
-                                            >
-                                                <div className="flex items-center gap-4">
-                                                    <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-cyan-500/20 text-cyan-400 font-semibold">
-                                                        {step.step_number}
-                                                    </div>
-                                                    <div>
-                                                        <h4 className="text-base font-semibold text-slate-100">
-                                                            {step.title}
-                                                        </h4>
-                                                        {!isExpanded && (
-                                                            <p className="text-xs text-slate-500">
-                                                                Detayları görmek için tıklayın
-                                                            </p>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                                <svg
-                                                    className={clsx(
-                                                        "h-5 w-5 flex-shrink-0 text-slate-400 transition-transform",
-                                                        isExpanded && "rotate-180"
-                                                    )}
-                                                    fill="none"
-                                                    stroke="currentColor"
-                                                    viewBox="0 0 24 24"
-                                                >
-                                                    <path
-                                                        strokeLinecap="round"
-                                                        strokeLinejoin="round"
-                                                        strokeWidth={2}
-                                                        d="M19 9l-7 7-7-7"
-                                                    />
-                                                </svg>
-                                            </button>
-
-                                            {/* Step Content */}
-                                            {isExpanded && (
-                                                <div className="px-6 py-6">
-                                                    <div
-                                                        className={clsx(
-                                                            "flex flex-col gap-6",
-                                                            (hasBeamHighlight || hasAreaVisualization) && "lg:flex-row"
-                                                        )}
-                                                    >
-                                                        <div
-                                                            className={clsx(
-                                                                "space-y-4",
-                                                                (hasBeamHighlight || hasAreaVisualization) && "lg:flex-1 lg:pr-4"
-                                                            )}
-                                                        >
-                                                            {/* Explanation */}
-                                                            <div>
-                                                                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
-                                                                    Açıklama
-                                                                </p>
-                                                                <div className="rounded-lg bg-slate-800/30 border border-slate-700/50 p-4">
-                                                                    <p className="whitespace-pre-line text-[15px] leading-7 text-slate-100 font-sans">
-                                                                        {step.explanation}
-                                                                    </p>
-                                                                </div>
-                                                            </div>
-
-                                                            {/* Formulas */}
-                                                            {(step.general_formula || step.substituted_formula) && (
-                                                                <div className="space-y-4">
-                                                                    {/* General Formula */}
-                                                                    {step.general_formula && (
-                                                                        <div>
-                                                                            <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
-                                                                                Genel Formül
-                                                                            </p>
-                                                                            <div className="rounded-xl bg-slate-950/50 p-6 border border-cyan-500/20">
-                                                                                <BlockMath math={step.general_formula} />
-                                                                            </div>
-                                                                        </div>
-                                                                    )}
-
-                                                                    {/* Substituted Formula */}
-                                                                    {step.substituted_formula && (
-                                                                        <div>
-                                                                            <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
-                                                                                Değerlerin Yerine Konulmuş Hali
-                                                                            </p>
-                                                                            <div className="rounded-xl bg-slate-950/50 p-6 border border-green-500/20">
-                                                                                <BlockMath math={step.substituted_formula} />
-                                                                            </div>
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                            )}
-
-                                                            {/* Numerical Result */}
-                                                            {step.numerical_result && (
-                                                                <div>
-                                                                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
-                                                                        Sonuç
-                                                                    </p>
-                                                                    <div className="rounded-lg bg-green-500/10 border border-green-500/30 px-4 py-3">
-                                                                        <p className="text-sm font-medium text-green-300">
-                                                                            {step.numerical_result}
-                                                                        </p>
-                                                                    </div>
-                                                                </div>
-                                                            )}
-                                                        </div>
-
-                                                        {step.beam_section && beamContext && (
-                                                            <div className="shrink-0 w-full lg:w-[340px]">
-                                                                <BeamSectionDiagram
-                                                                    context={beamContext}
-                                                                    highlight={step.beam_section}
-                                                                />
-                                                            </div>
-                                                        )}
-                                                        {hasAreaVisualization && detailedSolution.diagram && step.area_visualization && (
-                                                            <div className="shrink-0 w-full lg:w-[360px]">
-                                                                <AreaMethodDiagram
-                                                                    diagram={detailedSolution.diagram}
-                                                                    visualization={step.area_visualization}
-                                                                />
-                                                            </div>
-                                                        )}
+                                        <div className="space-y-4">
+                                            {currentStep.general_formula && (
+                                                <div className="rounded-xl border border-cyan-500/20 bg-slate-950/50 p-6">
+                                                    <p className="mb-2 text-xs font-bold uppercase tracking-wider text-cyan-500">
+                                                        Formül
+                                                    </p>
+                                                    <div className="text-xl">
+                                                        <BlockMath math={currentStep.general_formula} />
                                                     </div>
                                                 </div>
                                             )}
+                                            {currentStep.substituted_formula && (
+                                                <div className="rounded-xl border border-slate-700/50 bg-slate-950/30 p-6">
+                                                    <p className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-500">
+                                                        Hesaplama
+                                                    </p>
+                                                    <div className="text-xl">
+                                                        <BlockMath math={currentStep.substituted_formula} />
+                                                    </div>
+                                                </div>
+                                            )}
+                                            {currentStep.numerical_result && (
+                                                <div className="rounded-xl border border-green-500/30 bg-green-500/10 p-6">
+                                                    <p className="mb-2 text-xs font-bold uppercase tracking-wider text-green-400">
+                                                        Sonuç
+                                                    </p>
+                                                    <p className="text-2xl font-bold text-green-300">
+                                                        {currentStep.numerical_result}
+                                                    </p>
+                                                </div>
+                                            )}
                                         </div>
-                                    );
-                                })}
-                            </div>
+                                    </div>
+
+                                    {/* Right Side: Visuals */}
+                                    <div className="flex flex-1 flex-col items-center justify-center gap-6 rounded-3xl bg-slate-950/50 p-4 md:p-8 overflow-hidden">
+                                        {beamContext && (
+                                            <div className="w-full h-full flex items-center justify-center">
+                                                <div className="w-full max-w-full transform transition-all hover:scale-[1.02]">
+                                                    <BeamSectionDiagram
+                                                        context={beamContext}
+                                                        highlight={
+                                                            currentStep.beam_section || {
+                                                                start: 0,
+                                                                end: beamContext.length,
+                                                                label: "Genel Görünüm",
+                                                            }
+                                                        }
+                                                    />
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {currentStep.area_visualization && detailedSolution.diagram && (
+                                            <div className="w-full h-full flex items-center justify-center">
+                                                <div className="w-full max-w-full rounded-xl border border-slate-800 bg-slate-900 p-4">
+                                                    <AreaMethodDiagram
+                                                        diagram={detailedSolution.diagram}
+                                                        visualization={currentStep.area_visualization}
+                                                    />
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </motion.div>
+                            )
+                        )}
+                    </AnimatePresence>
+                </div>
+
+                {/* Footer Navigation */}
+                <div className="flex items-center justify-between border-t border-slate-800 bg-slate-900 px-8 py-6">
+                    <button
+                        onClick={handlePrev}
+                        disabled={viewState === "reactions" && currentStepIndex === 0}
+                        className="flex items-center gap-2 rounded-lg px-6 py-3 font-semibold text-slate-400 transition hover:bg-slate-800 hover:text-white disabled:opacity-50"
+                    >
+                        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                        </svg>
+                        Geri
+                    </button>
+
+                    {/* Progress Dots */}
+                    {viewState !== "selection" && (
+                        <div className="flex gap-2">
+                            {Array.from({ length: totalSteps }).map((_, i) => (
+                                <div
+                                    key={i}
+                                    className={clsx(
+                                        "h-2 rounded-full transition-all",
+                                        i === currentStepIndex
+                                            ? "w-8 bg-cyan-500"
+                                            : i < currentStepIndex
+                                                ? "w-2 bg-cyan-500/50"
+                                                : "w-2 bg-slate-700"
+                                    )}
+                                />
+                            ))}
                         </div>
-                    </div>
+                    )}
+
+                    <button
+                        onClick={handleNext}
+                        disabled={viewState === "method" && currentStepIndex === totalSteps - 1}
+                        className={clsx(
+                            "flex items-center gap-2 rounded-lg px-8 py-3 font-bold text-white shadow-lg transition-all",
+                            viewState === "method" && currentStepIndex === totalSteps - 1
+                                ? "cursor-not-allowed bg-slate-700 opacity-50"
+                                : "bg-cyan-600 hover:bg-cyan-500 hover:shadow-cyan-500/25"
+                        )}
+                    >
+                        {viewState === "reactions" && currentStepIndex === totalSteps - 1
+                            ? "Yöntem Seç"
+                            : viewState === "method" && currentStepIndex === totalSteps - 1
+                                ? "Tamamlandı"
+                                : "İleri"}
+                        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                    </button>
                 </div>
             </div>
-        </>
+        </div>
     );
 }
-
-// Diagram bileşeni kaldırıldı

@@ -26,13 +26,13 @@ export function BeamSectionDiagram({ context, highlight }: BeamSectionDiagramPro
     const bandX = isPointHighlight ? highlightStart - bandWidth / 2 : highlightStart;
 
     return (
-        <div className="flex w-full max-w-sm flex-col gap-3">
+        <div className="flex w-full flex-col gap-3">
             <div className="flex items-center justify-between">
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Kesilen Bölge</p>
                 {highlight.label && <span className="text-xs text-cyan-300">{highlight.label}</span>}
             </div>
-            <div className="rounded-xl border border-cyan-500/30 bg-slate-950/60 p-4 shadow-inner">
-                <svg viewBox={`0 0 ${width} ${height}`} className="h-36 w-full">
+            <div className="rounded-xl border border-cyan-500/30 bg-slate-950/60 p-4 shadow-inner w-full">
+                <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto max-h-[300px]" preserveAspectRatio="xMidYMid meet">
                     {/* Beam baseline */}
                     <line
                         x1={margin}

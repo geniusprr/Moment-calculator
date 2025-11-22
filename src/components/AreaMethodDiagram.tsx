@@ -50,7 +50,7 @@ export function AreaMethodDiagram({ diagram, visualization }: AreaMethodDiagramP
     );
 
     return (
-        <div className="flex w-full max-w-sm flex-col gap-3">
+        <div className="flex w-full flex-col gap-3">
             <div className="flex items-center justify-between">
                 <div>
                     <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Alan Yöntemi Vurgusu</p>
@@ -61,8 +61,8 @@ export function AreaMethodDiagram({ diagram, visualization }: AreaMethodDiagramP
                 </div>
             </div>
 
-            <div className="rounded-xl border border-cyan-500/30 bg-slate-950/60 p-4 shadow-inner">
-                <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} className="h-72 w-full">
+            <div className="rounded-xl border border-cyan-500/30 bg-slate-950/60 p-4 shadow-inner w-full">
+                <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} className="w-full h-auto max-h-[300px]" preserveAspectRatio="xMidYMid meet">
                     {/* Shear Chart */}
                     <g>
                         <rect
