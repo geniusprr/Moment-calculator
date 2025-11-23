@@ -28,9 +28,7 @@ interface BeamFormProps {
   onMomentChange: (id: string, field: keyof MomentLoadInput, value: string | number) => void;
   onAddMoment: () => void;
   onRemoveMoment: (id: string) => void;
-  onSolve: () => void;
   onReset: () => void;
-  solving: boolean;
   disableSolveReason?: string | null;
 }
 
@@ -61,9 +59,7 @@ export function BeamForm({
   onMomentChange,
   onAddMoment,
   onRemoveMoment,
-  onSolve,
   onReset,
-  solving,
   disableSolveReason,
 }: BeamFormProps) {
   const maxSupports = beamType === "cantilever" ? 1 : 2;
@@ -442,21 +438,6 @@ export function BeamForm({
           {disableSolveReason}
         </div>
       )}
-
-      <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-        <button
-          type="button"
-          onClick={onSolve}
-          disabled={solving || Boolean(disableSolveReason)}
-          className="group relative overflow-hidden rounded-full bg-cyan-500 px-6 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:bg-slate-700/60 disabled:text-slate-400"
-        >
-          <span className="relative z-10 flex items-center gap-2">
-            {solving && <span className="inline-flex h-3 w-3 animate-ping rounded-full bg-slate-950 opacity-80" />}
-            {solving ? "Çözülüyor" : "Çöz"}
-          </span>
-          <span className="absolute inset-0 -z-0 translate-y-full bg-white/40 transition group-hover:translate-y-0" />
-        </button>
-      </div>
     </div>
   );
 }

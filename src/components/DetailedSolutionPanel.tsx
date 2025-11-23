@@ -4,12 +4,13 @@ import { useEffect, useState } from "react";
 import { BlockMath } from "react-katex";
 import clsx from "clsx";
 import { motion, AnimatePresence } from "framer-motion";
-import type { DetailedSolution, SolutionMethod } from "@/types/beam";
-import { BeamSectionDiagram } from "./BeamSectionDiagram";
+import type { DetailedSolution, SolutionMethod, SupportReaction } from "@/types/beam";
+import { BeamSketch } from "./BeamSketch";
 import { AreaMethodDiagram } from "./AreaMethodDiagram";
 
 interface DetailedSolutionPanelProps {
     detailedSolution: DetailedSolution;
+    reactions?: SupportReaction[];
     isOpen: boolean;
     onClose: () => void;
 }
@@ -18,6 +19,7 @@ type ViewState = "reactions" | "selection" | "method";
 
 export function DetailedSolutionPanel({
     detailedSolution,
+    reactions,
     isOpen,
     onClose,
 }: DetailedSolutionPanelProps) {
@@ -251,21 +253,62 @@ export function DetailedSolutionPanel({
                                     </div>
 
                                     {/* Right Side: Visuals */}
-                                    <div className="flex flex-1 flex-col items-center justify-center gap-6 rounded-3xl bg-slate-950/50 p-4 md:p-8 overflow-hidden">
+                                    <div className="flex flex-1 flex-col items-center justify-center gap-6 rounded-3xl bg-slate-950/50 p-4 md:p-8 overflow-hidden relative">
                                         {beamContext && (
-                                            <div className="w-full h-full flex items-center justify-center">
-                                                <div className="w-full max-w-full transform transition-all hover:scale-[1.02]">
-                                                    <BeamSectionDiagram
-                                                        context={beamContext}
-                                                        highlight={
-                                                            currentStep.beam_section || {
-                                                                start: 0,
-                                                                end: beamContext.length,
-                                                                label: "Genel Görünüm",
-                                                            }
-                                                        }
+                                            <div className="w-full relative">
+                                                <div className="pointer-events-none select-none">
+                                                    <BeamSketch
+                                                        length={beamContext.length}
+                                                        supports={beamContext.supports}
+                                                        pointLoads={beamContext.point_loads.map((l) => ({ ...l, angleDeg: l.angle_deg }))}
+                                                        udls={beamContext.udls}
+                                                        momentLoads={beamContext.moment_loads}
+                                                        reactions={reactions}
+                                                        onSupportPositionChange={() => { }}
+                                                        onPointLoadPositionChange={() => { }}
+                                                        onUdlRangeChange={() => { }}
+                                                        onMomentPositionChange={() => { }}
+                                                        onOpenContextMenu={() => { }}
                                                     />
                                                 </div>
+
+                                                {/* Highlight Overlay */}
+                                                {currentStep.beam_section && (
+                                                    <div className="absolute inset-0 pointer-events-none z-10">
+                                                        {(() => {
+                                                            const start = Math.min(currentStep.beam_section.start, currentStep.beam_section.end);
+                                                            const end = Math.max(currentStep.beam_section.start, currentStep.beam_section.end);
+                                                            const length = Math.max(beamContext.length, 1e-6);
+
+                                                            const startPct = (start / length) * 100;
+                                                            const endPct = (end / length) * 100;
+
+                                                            // BeamSketch uses 2% padding on sides and 96% width for the beam content
+                                                            const left = 2 + startPct * 0.96;
+                                                            const width = (endPct - startPct) * 0.96;
+
+                                                            // If it's a point cut (width ~ 0)
+                                                            const isPoint = width < 0.1;
+
+                                                            return (
+                                                                <div
+                                                                    className="absolute top-0 bottom-0 border-x-2 border-cyan-400/50 bg-cyan-400/10 transition-all duration-500"
+                                                                    style={{
+                                                                        left: `${left}%`,
+                                                                        width: isPoint ? "2px" : `${width}%`,
+                                                                        transform: isPoint ? "translateX(-1px)" : "none",
+                                                                    }}
+                                                                >
+                                                                    {currentStep.beam_section.label && (
+                                                                        <div className="absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-cyan-500/20 px-2 py-1 text-xs font-bold text-cyan-300 backdrop-blur-sm">
+                                                                            {currentStep.beam_section.label}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            );
+                                                        })()}
+                                                    </div>
+                                                )}
                                             </div>
                                         )}
 

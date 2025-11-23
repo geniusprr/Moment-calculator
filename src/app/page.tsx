@@ -162,6 +162,7 @@ export default function HomePage() {
   const [chimneyResult, setChimneyResult] = useState<ChimneyPeriodResponse | null>(null);
   const [chimneyError, setChimneyError] = useState<string | null>(null);
   const [isChimneyPending, startChimneyTransition] = useTransition();
+  const [view, setView] = useState<"onboarding" | "app">("onboarding");
 
   useEffect(() => {
     setSupports((current) => current.map((support) => ({ ...support, position: clampValue(support.position, 0, length) })));
@@ -337,12 +338,11 @@ export default function HomePage() {
   }, [chimneyInput]);
 
   useEffect(() => {
-    if (!pendingPresetKey) {
-      return;
-    }
-    runSolve();
-    setPendingPresetKey(null);
-  }, [pendingPresetKey, runSolve]);
+    const timer = setTimeout(() => {
+      runSolve();
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [runSolve]);
 
   const clearPresetSelection = useCallback(() => {
     setActivePreset(null);
@@ -963,49 +963,23 @@ export default function HomePage() {
       }}
     >
       {/* Header */}
-      <header className="border-b border-slate-800/50 bg-slate-900/80 backdrop-blur-md">
-        <div className="mx-auto flex w-full max-w-none items-center justify-between gap-4 px-4 py-3 sm:px-6">
-          <div className="flex items-center gap-3">
-            <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-white/95 shadow-lg ring-1 ring-slate-800/5">
-              <Image src={KtoLogo} alt="KTO Logo" className="h-11 w-11 object-contain" priority />
+      <header className="sticky top-0 z-40 border-b border-slate-800/50 bg-slate-900/80 backdrop-blur-xl">
+        <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-4 py-3 sm:px-6">
+          <button
+            onClick={() => setView("onboarding")}
+            className="flex items-center gap-3 transition hover:opacity-80"
+          >
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-slate-800 to-slate-900 shadow-lg ring-1 ring-white/10">
+              <Image src={KtoLogo} alt="KTO Logo" className="h-8 w-8 object-contain" priority />
             </div>
-            <div>
-              <h1 className="text-xl font-bold text-slate-50">Kiriş Moment Hesaplayıcı</h1>
-              <p className="text-xs text-slate-400">Statik analiz aracı</p>
+            <div className="text-left">
+              <h1 className="text-lg font-bold text-slate-100 leading-tight">Moment Calculator</h1>
+              <p className="text-[10px] font-medium text-slate-400">Engineering Suite</p>
             </div>
-          </div>
+          </button>
 
-          <div className="flex flex-col items-end gap-2 sm:flex-row sm:items-center">
-            <div className="flex items-center gap-1 rounded-full border border-slate-700/70 bg-slate-800/70 p-1 shadow-inner relative">
-              {[
-                { key: "beam", label: "Kiriş Analizi" },
-                { key: "chimney", label: "Baca Periyodu" },
-              ].map((item) => {
-                const active = mode === item.key;
-                return (
-                  <button
-                    key={item.key}
-                    type="button"
-                    onClick={() => setMode(item.key as Mode)}
-                    className={clsx(
-                      "relative z-10 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors duration-200",
-                      active ? "text-slate-950" : "text-slate-200 hover:text-white"
-                    )}
-                  >
-                    {active && (
-                      <motion.div
-                        layoutId="mode-indicator"
-                        className="absolute inset-0 -z-10 rounded-full bg-gradient-to-r from-emerald-400 to-cyan-500 shadow-lg"
-                        transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
-                      />
-                    )}
-                    {item.label}
-                  </button>
-                );
-              })}
-            </div>
-
-            {mode === "beam" && (
+          <div className="flex items-center gap-4">
+            {view === "app" && mode === "beam" && (
               <div className="flex items-center gap-1 rounded-full border border-slate-700/70 bg-slate-800/70 p-1 shadow-inner relative">
                 {BEAM_TYPES.map((type) => {
                   const active = beamType === type.key;
@@ -1033,17 +1007,76 @@ export default function HomePage() {
                 })}
               </div>
             )}
-          </div>
 
-          <div className="hidden text-right sm:block">
-            <p className="text-[10px] text-slate-500">Made by</p>
-            <p className="text-xs font-semibold text-slate-300">Team Vortex</p>
+            {view === "app" && (
+              <button
+                onClick={() => setView("onboarding")}
+                className="hidden sm:block text-xs font-medium text-slate-400 hover:text-white transition-colors"
+              >
+                Tüm Araçlar
+              </button>
+            )}
           </div>
         </div>
       </header>
 
 
-      {mode === "beam" ? (
+      {view === "onboarding" ? (
+        <div className="mx-auto max-w-5xl px-4 py-12 sm:px-6 lg:px-8">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">
+              Mühendislik Hesaplama Araçları
+            </h2>
+            <p className="mt-4 text-lg text-slate-400">
+              Projeniz için ihtiyacınız olan analiz aracını seçin.
+            </p>
+          </div>
+
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            <button
+              onClick={() => { setMode("beam"); setView("app"); }}
+              className="group relative flex flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/50 p-6 text-left transition hover:border-cyan-500/50 hover:bg-slate-800/50"
+            >
+              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-cyan-500/10 text-cyan-400 group-hover:bg-cyan-500/20">
+                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16m-7 6h7" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold text-white">Kiriş Analizi</h3>
+              <p className="mt-2 text-sm text-slate-400">
+                Basit ve konsol kirişler için moment, kesme kuvveti ve mesnet tepkilerini hesaplayın.
+              </p>
+            </button>
+
+            <button
+              onClick={() => { setMode("chimney"); setView("app"); }}
+              className="group relative flex flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/50 p-6 text-left transition hover:border-emerald-500/50 hover:bg-slate-800/50"
+            >
+              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-400 group-hover:bg-emerald-500/20">
+                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold text-white">Baca Periyodu</h3>
+              <p className="mt-2 text-sm text-slate-400">
+                Endüstriyel bacalar için temel titreşim periyodu ve frekans analizi.
+              </p>
+            </button>
+
+            <div className="relative flex flex-col overflow-hidden rounded-2xl border border-slate-800/50 bg-slate-900/20 p-6 text-left opacity-60">
+              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-slate-800 text-slate-600">
+                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold text-slate-500">Yeni Araç</h3>
+              <p className="mt-2 text-sm text-slate-600">
+                Yakında eklenecek...
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : mode === "beam" ? (
         <div className="mx-auto flex w-full max-w-none flex-col gap-4 px-4 pt-4 sm:px-6">
           <div className="grid gap-6 xl:grid-cols-[380px_minmax(0,1fr)_380px]">
             <div className="space-y-6">
@@ -1102,9 +1135,7 @@ export default function HomePage() {
                 onMomentChange={handleMomentChange}
                 onAddMoment={() => handleAddMoment()}
                 onRemoveMoment={handleRemoveMoment}
-                onSolve={runSolve}
                 onReset={handleReset}
-                solving={isPending}
                 disableSolveReason={disableSolveReason}
               />
               <section className="panel space-y-4 p-3 sm:p-4">
@@ -1475,6 +1506,7 @@ export default function HomePage() {
       {result?.detailed_solutions && (
         <DetailedSolutionPanel
           detailedSolution={result.detailed_solutions}
+          reactions={result.reactions}
           isOpen={isDetailedSolutionOpen}
           onClose={() => setIsDetailedSolutionOpen(false)}
         />
