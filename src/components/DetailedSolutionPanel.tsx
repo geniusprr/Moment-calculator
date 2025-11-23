@@ -117,41 +117,61 @@ export function DetailedSolutionPanel({
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 backdrop-blur-md">
-            <div className="relative flex h-full w-full flex-col overflow-hidden bg-slate-900 text-slate-100 md:h-[90vh] md:w-[90vw] md:rounded-2xl md:border md:border-slate-800 md:shadow-2xl">
-                {/* Header */}
-                <div className="flex items-center justify-between border-b border-slate-800 bg-slate-900 px-6 py-4">
-                    <div>
-                        <h2 className="text-xl font-bold text-cyan-400">
-                            {viewState === "reactions"
-                                ? "Adım 1: Mesnet Tepkileri"
-                                : viewState === "selection"
-                                    ? "Adım 2: Yöntem Seçimi"
-                                    : `Adım 3: ${activeMethod?.method_title}`}
-                        </h2>
-                        <p className="text-sm text-slate-400">
-                            {viewState === "selection"
-                                ? "Devam etmek için bir çözüm yöntemi seçiniz."
-                                : `Adım ${currentStepIndex + 1} / ${totalSteps}`}
-                        </p>
+        <div className="fixed inset-0 z-50 flex flex-col bg-slate-950 text-slate-100 overflow-hidden">
+            {/* Top Bar: Header & Beam Sketch */}
+            <div className="flex-none border-b border-slate-800 bg-slate-900/50 backdrop-blur-md">
+                <div className="flex items-center justify-between px-6 py-3 border-b border-slate-800/50">
+                    <div className="flex items-center gap-4">
+                        <button
+                            onClick={onClose}
+                            className="rounded-full p-2 text-slate-400 hover:bg-slate-800 hover:text-white transition-colors"
+                        >
+                            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                            </svg>
+                        </button>
+                        <div>
+                            <h2 className="text-lg font-bold text-white">
+                                {viewState === "reactions"
+                                    ? "Adım 1: Mesnet Tepkileri"
+                                    : viewState === "selection"
+                                        ? "Adım 2: Yöntem Seçimi"
+                                        : `Adım 3: ${activeMethod?.method_title}`}
+                            </h2>
+                            <p className="text-xs text-slate-400">
+                                {viewState === "selection"
+                                    ? "Devam etmek için bir çözüm yöntemi seçiniz."
+                                    : `Adım ${currentStepIndex + 1} / ${totalSteps}`}
+                            </p>
+                        </div>
                     </div>
-                    <button
-                        onClick={onClose}
-                        className="rounded-full p-2 text-slate-400 hover:bg-slate-800 hover:text-white"
-                    >
-                        <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M6 18L18 6M6 6l12 12"
-                            />
-                        </svg>
-                    </button>
+
+                    {/* Progress Indicator */}
+                    {viewState !== "selection" && (
+                        <div className="hidden md:flex gap-1">
+                            {Array.from({ length: totalSteps }).map((_, i) => (
+                                <div
+                                    key={i}
+                                    className={clsx(
+                                        "h-1.5 rounded-full transition-all",
+                                        i === currentStepIndex
+                                            ? "w-8 bg-cyan-500"
+                                            : i < currentStepIndex
+                                                ? "w-4 bg-cyan-500/40"
+                                                : "w-4 bg-slate-800"
+                                    )}
+                                />
+                            ))}
+                        </div>
+                    )}
                 </div>
 
-                {/* Main Content Area */}
-                <div className="flex-1 overflow-hidden relative">
+                {/* Always Visible Beam Sketch - REMOVED */}
+            </div>
+
+            {/* Main Content Area */}
+            <div className="flex-1 overflow-y-auto bg-slate-950">
+                <div className="mx-auto max-w-7xl p-6 md:p-10">
                     <AnimatePresence mode="wait">
                         {viewState === "selection" ? (
                             <motion.div
@@ -159,18 +179,18 @@ export function DetailedSolutionPanel({
                                 initial={{ opacity: 0, y: 20 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 exit={{ opacity: 0, y: -20 }}
-                                className="flex h-full flex-col items-center justify-center p-8"
+                                className="flex flex-col items-center justify-center"
                             >
-                                <h3 className="mb-8 text-3xl font-bold text-white">
+                                <h3 className="mb-8 text-2xl font-bold text-white">
                                     Nasıl devam etmek istersiniz?
                                 </h3>
-                                <div className="grid w-full max-w-5xl grid-cols-1 gap-6 md:grid-cols-3">
+                                <div className="grid w-full grid-cols-1 gap-6 md:grid-cols-3">
                                     {solverMethods.map((method) => (
                                         <button
                                             key={method.method_name}
                                             onClick={() => handleMethodSelect(method)}
                                             className={clsx(
-                                                "group relative flex flex-col items-start rounded-xl border p-6 text-left transition-all hover:scale-105 hover:shadow-xl",
+                                                "group relative flex flex-col items-start rounded-xl border p-6 text-left transition-all hover:scale-[1.02] hover:shadow-xl",
                                                 method.recommended
                                                     ? "border-cyan-500/50 bg-cyan-500/10 hover:bg-cyan-500/20"
                                                     : "border-slate-700 bg-slate-800/50 hover:bg-slate-800"
@@ -201,40 +221,40 @@ export function DetailedSolutionPanel({
                             currentStep && (
                                 <motion.div
                                     key={`${viewState}-${currentStep.step_number}`}
-                                    initial={{ opacity: 0, x: 50 }}
+                                    initial={{ opacity: 0, x: 20 }}
                                     animate={{ opacity: 1, x: 0 }}
-                                    exit={{ opacity: 0, x: -50 }}
+                                    exit={{ opacity: 0, x: -20 }}
                                     transition={{ duration: 0.3 }}
-                                    className="flex h-full flex-col gap-8 overflow-y-auto p-8 md:flex-row"
+                                    className="grid grid-cols-1 gap-8 lg:grid-cols-2"
                                 >
-                                    {/* Left Side: Text & Formulas */}
-                                    <div className="flex flex-1 flex-col justify-center space-y-8">
+                                    {/* Left Side: Explanation & Formulas */}
+                                    <div className="space-y-6">
                                         <div>
-                                            <h3 className="mb-4 text-3xl font-bold text-white">
+                                            <h3 className="mb-4 text-2xl font-bold text-white">
                                                 {currentStep.title}
                                             </h3>
-                                            <div className="rounded-2xl border border-slate-700 bg-slate-800/50 p-6 text-lg leading-relaxed text-slate-200 shadow-sm">
+                                            <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6 text-lg leading-relaxed text-slate-300">
                                                 {currentStep.explanation}
                                             </div>
                                         </div>
 
                                         <div className="space-y-4">
                                             {currentStep.general_formula && (
-                                                <div className="rounded-xl border border-cyan-500/20 bg-slate-950/50 p-6">
-                                                    <p className="mb-2 text-xs font-bold uppercase tracking-wider text-cyan-500">
+                                                <div className="rounded-xl border border-cyan-500/20 bg-slate-900/30 p-6">
+                                                    <p className="mb-3 text-xs font-bold uppercase tracking-wider text-cyan-500">
                                                         Formül
                                                     </p>
-                                                    <div className="text-xl">
+                                                    <div className="text-xl overflow-x-auto">
                                                         <BlockMath math={currentStep.general_formula} />
                                                     </div>
                                                 </div>
                                             )}
                                             {currentStep.substituted_formula && (
-                                                <div className="rounded-xl border border-slate-700/50 bg-slate-950/30 p-6">
-                                                    <p className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-500">
+                                                <div className="rounded-xl border border-slate-700/50 bg-slate-900/30 p-6">
+                                                    <p className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-500">
                                                         Hesaplama
                                                     </p>
-                                                    <div className="text-xl">
+                                                    <div className="text-xl overflow-x-auto">
                                                         <BlockMath math={currentStep.substituted_formula} />
                                                     </div>
                                                 </div>
@@ -245,17 +265,18 @@ export function DetailedSolutionPanel({
                                                         Sonuç
                                                     </p>
                                                     <p className="text-2xl font-bold text-green-300">
-                                                        {currentStep.numerical_result}
+                                                        <BlockMath math={currentStep.numerical_result} />
                                                     </p>
                                                 </div>
                                             )}
                                         </div>
                                     </div>
 
-                                    {/* Right Side: Visuals */}
-                                    <div className="flex flex-1 flex-col items-center justify-center gap-6 rounded-3xl bg-slate-950/50 p-4 md:p-8 overflow-hidden relative">
+                                    {/* Right Side: Visualizations (Area Method Diagrams etc.) */}
+                                    <div className="hidden lg:flex flex-col sticky top-6 self-start space-y-4">
+                                        {/* Beam Sketch Container */}
                                         {beamContext && (
-                                            <div className="w-full relative">
+                                            <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-4 relative">
                                                 <div className="pointer-events-none select-none">
                                                     <BeamSketch
                                                         length={beamContext.length}
@@ -272,8 +293,8 @@ export function DetailedSolutionPanel({
                                                     />
                                                 </div>
 
-                                                {/* Highlight Overlay */}
-                                                {currentStep.beam_section && (
+                                                {/* Highlight Overlay for Sections */}
+                                                {currentStep?.beam_section && (
                                                     <div className="absolute inset-0 pointer-events-none z-10">
                                                         {(() => {
                                                             const start = Math.min(currentStep.beam_section.start, currentStep.beam_section.end);
@@ -299,8 +320,25 @@ export function DetailedSolutionPanel({
                                                                         transform: isPoint ? "translateX(-1px)" : "none",
                                                                     }}
                                                                 >
-                                                                    {currentStep.beam_section.label && (
-                                                                        <div className="absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-cyan-500/20 px-2 py-1 text-xs font-bold text-cyan-300 backdrop-blur-sm">
+                                                                    {/* Cut Line Indicator for Section Method */}
+                                                                    {activeMethod?.method_name === "section_method" && (
+                                                                        <>
+                                                                            {/* Dashed cut line in the middle of the section */}
+                                                                            {!isPoint && (
+                                                                                <div className="absolute top-0 bottom-0 left-1/2 w-0.5 -translate-x-1/2 border-l-2 border-dashed border-cyan-400/60"></div>
+                                                                            )}
+
+                                                                            <div className="absolute -top-2 left-1/2 -translate-x-1/2 flex flex-col items-center z-20">
+                                                                                <div className="h-4 w-0.5 bg-cyan-400"></div>
+                                                                                <div className="text-[10px] font-bold text-cyan-400 bg-slate-900 px-1 rounded border border-cyan-500/30 whitespace-nowrap shadow-lg">
+                                                                                    {isPoint ? "KESİM" : "KESİT x"}
+                                                                                </div>
+                                                                            </div>
+                                                                        </>
+                                                                    )}
+
+                                                                    {currentStep.beam_section.label && !isPoint && activeMethod?.method_name !== "section_method" && (
+                                                                        <div className="absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-cyan-500/20 px-2 py-1 text-xs font-bold text-cyan-300 backdrop-blur-sm border border-cyan-500/30">
                                                                             {currentStep.beam_section.label}
                                                                         </div>
                                                                     )}
@@ -312,14 +350,13 @@ export function DetailedSolutionPanel({
                                             </div>
                                         )}
 
+                                        {/* Diagram Container */}
                                         {currentStep.area_visualization && detailedSolution.diagram && (
-                                            <div className="w-full h-full flex items-center justify-center">
-                                                <div className="w-full max-w-full rounded-xl border border-slate-800 bg-slate-900 p-4">
-                                                    <AreaMethodDiagram
-                                                        diagram={detailedSolution.diagram}
-                                                        visualization={currentStep.area_visualization}
-                                                    />
-                                                </div>
+                                            <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-3">
+                                                <AreaMethodDiagram
+                                                    diagram={detailedSolution.diagram}
+                                                    visualization={currentStep.area_visualization}
+                                                />
                                             </div>
                                         )}
                                     </div>
@@ -328,9 +365,11 @@ export function DetailedSolutionPanel({
                         )}
                     </AnimatePresence>
                 </div>
+            </div>
 
-                {/* Footer Navigation */}
-                <div className="flex items-center justify-between border-t border-slate-800 bg-slate-900 px-8 py-6">
+            {/* Footer Navigation */}
+            <div className="flex-none border-t border-slate-800 bg-slate-900 px-8 py-4">
+                <div className="mx-auto flex max-w-7xl items-center justify-between">
                     <button
                         onClick={handlePrev}
                         disabled={viewState === "reactions" && currentStepIndex === 0}
@@ -341,25 +380,6 @@ export function DetailedSolutionPanel({
                         </svg>
                         Geri
                     </button>
-
-                    {/* Progress Dots */}
-                    {viewState !== "selection" && (
-                        <div className="flex gap-2">
-                            {Array.from({ length: totalSteps }).map((_, i) => (
-                                <div
-                                    key={i}
-                                    className={clsx(
-                                        "h-2 rounded-full transition-all",
-                                        i === currentStepIndex
-                                            ? "w-8 bg-cyan-500"
-                                            : i < currentStepIndex
-                                                ? "w-2 bg-cyan-500/50"
-                                                : "w-2 bg-slate-700"
-                                    )}
-                                />
-                            ))}
-                        </div>
-                    )}
 
                     <button
                         onClick={handleNext}

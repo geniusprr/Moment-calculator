@@ -5,10 +5,9 @@ interface AreaMethodDiagramProps {
     visualization: AreaMethodVisualization;
 }
 
-const WIDTH = 340;
-const HEIGHT = 280;
-const SECTION_PADDING = 36;
-const CHART_HEIGHT = (HEIGHT - SECTION_PADDING) / 2;
+const WIDTH = 400;
+const HEIGHT = 200;
+const CHART_HEIGHT = HEIGHT / 2;
 
 const trendLabels: Record<AreaMethodVisualization["trend"], string> = {
     increase: "Moment artar",
@@ -50,33 +49,33 @@ export function AreaMethodDiagram({ diagram, visualization }: AreaMethodDiagramP
     );
 
     return (
-        <div className="flex w-full flex-col gap-3">
-            <div className="flex items-center justify-between">
+        <div className="flex w-full flex-col gap-2">
+            <div className="flex items-center justify-between px-2">
                 <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Alan Yöntemi Vurgusu</p>
-                    <p className="text-xs text-slate-500">{trendLabels[trend]} – {shape}</p>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Alan Yöntemi</p>
+                    <p className="text-xs text-slate-500">{trendLabels[trend]}</p>
                 </div>
                 <div className="rounded-full bg-cyan-500/10 px-3 py-1 text-xs font-medium text-cyan-300">
-                    ΔM = {area_value.toFixed(2)} kN·m
+                    ΔM = {area_value.toFixed(2)}
                 </div>
             </div>
 
-            <div className="rounded-xl border border-cyan-500/30 bg-slate-950/60 p-4 shadow-inner w-full">
-                <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} className="w-full h-auto max-h-[300px]" preserveAspectRatio="xMidYMid meet">
+            <div className="w-full overflow-hidden">
+                <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} className="w-full h-auto" preserveAspectRatio="xMinYMid meet">
                     {/* Shear Chart */}
                     <g>
                         <rect
-                            x={24}
-                            y={16}
-                            width={WIDTH - 48}
-                            height={CHART_HEIGHT - 16}
-                            rx={12}
+                            x={8}
+                            y={8}
+                            width={WIDTH - 16}
+                            height={CHART_HEIGHT - 12}
+                            rx={6}
                             fill="#0f172a"
                             fillOpacity={0.35}
                         />
                         {/* Axes */}
-                        <line x1={scaleX(xMin, xMin, xMax)} y1={shearZero} x2={scaleX(xMax, xMin, xMax)} y2={shearZero} stroke="#475569" strokeDasharray="4 2" />
-                        <line x1={scaleX(xMin, xMin, xMax)} y1={chartTop()} x2={scaleX(xMin, xMin, xMax)} y2={chartBottom()} stroke="#475569" strokeDasharray="2 3" />
+                        <line x1={scaleX(xMin, xMin, xMax)} y1={shearZero} x2={scaleX(xMax, xMin, xMax)} y2={shearZero} stroke="#475569" strokeDasharray="3 2" strokeWidth={0.8} />
+                        <line x1={scaleX(xMin, xMin, xMax)} y1={chartTop()} x2={scaleX(xMin, xMin, xMax)} y2={chartBottom()} stroke="#475569" strokeDasharray="2 2" strokeWidth={0.8} />
 
                         {/* Total shear line */}
                         <path d={shearLinePath} fill="none" stroke="#334155" strokeWidth={1.5} />
@@ -88,27 +87,24 @@ export function AreaMethodDiagram({ diagram, visualization }: AreaMethodDiagramP
                         <path d={highlightShearLinePath} fill="none" stroke="#22d3ee" strokeWidth={2.2} />
 
                         {/* Labels */}
-                        <text x={scaleX((xMin + xMax) / 2, xMin, xMax)} y={chartTop() + 14} textAnchor="middle" fill="#94a3b8" fontSize={11}>
-                            Kesme grafiği V(x)
-                        </text>
-                        <text x={scaleX(xMax, xMin, xMax)} y={shearZero - 6} textAnchor="end" fill="#64748b" fontSize={9}>
-                            x (m)
+                        <text x={scaleX((xMin + xMax) / 2, xMin, xMax)} y={chartTop() + 10} textAnchor="middle" fill="#94a3b8" fontSize={9}>
+                            V(x)
                         </text>
                     </g>
 
                     {/* Moment Chart */}
-                    <g transform={`translate(0, ${CHART_HEIGHT + 12})`}>
+                    <g transform={`translate(0, ${CHART_HEIGHT + 4})`}>
                         <rect
-                            x={24}
+                            x={8}
                             y={4}
-                            width={WIDTH - 48}
-                            height={CHART_HEIGHT - 16}
-                            rx={12}
+                            width={WIDTH - 16}
+                            height={CHART_HEIGHT - 12}
+                            rx={6}
                             fill="#0f172a"
                             fillOpacity={0.35}
                         />
-                        <line x1={scaleX(xMin, xMin, xMax)} y1={momentZero} x2={scaleX(xMax, xMin, xMax)} y2={momentZero} stroke="#475569" strokeDasharray="4 2" />
-                        <line x1={scaleX(xMin, xMin, xMax)} y1={chartBottom()} x2={scaleX(xMin, xMin, xMax)} y2={chartTop()} stroke="#475569" strokeDasharray="2 3" />
+                        <line x1={scaleX(xMin, xMin, xMax)} y1={momentZero} x2={scaleX(xMax, xMin, xMax)} y2={momentZero} stroke="#475569" strokeDasharray="3 2" strokeWidth={0.8} />
+                        <line x1={scaleX(xMin, xMin, xMax)} y1={chartBottom()} x2={scaleX(xMin, xMin, xMax)} y2={chartTop()} stroke="#475569" strokeDasharray="2 2" strokeWidth={0.8} />
 
                         {/* Total moment line */}
                         <path d={momentLinePath} fill="none" stroke="#334155" strokeWidth={1.5} />
@@ -125,11 +121,8 @@ export function AreaMethodDiagram({ diagram, visualization }: AreaMethodDiagramP
                             />
                         )}
 
-                        <text x={scaleX((xMin + xMax) / 2, xMin, xMax)} y={chartTop() + 20} textAnchor="middle" fill="#f1f5f9" fontSize={11}>
-                            Moment grafiği M(x)
-                        </text>
-                        <text x={scaleX(xMax, xMin, xMax)} y={momentZero - 6} textAnchor="end" fill="#64748b" fontSize={9}>
-                            x (m)
+                        <text x={scaleX((xMin + xMax) / 2, xMin, xMax)} y={chartTop() + 12} textAnchor="middle" fill="#f1f5f9" fontSize={9}>
+                            M(x)
                         </text>
                     </g>
                 </svg>
@@ -140,16 +133,16 @@ export function AreaMethodDiagram({ diagram, visualization }: AreaMethodDiagramP
 
 function scaleX(value: number, min: number, max: number): number {
     if (max - min === 0) return WIDTH / 2;
-    const padding = 40;
+    const padding = 12;
     return padding + ((value - min) / (max - min)) * (WIDTH - padding * 2);
 }
 
 function chartTop(): number {
-    return 24;
+    return 18;
 }
 
 function chartBottom(): number {
-    return CHART_HEIGHT - 8;
+    return CHART_HEIGHT - 6;
 }
 
 function scaleValue(value: number, min: number, max: number): number {

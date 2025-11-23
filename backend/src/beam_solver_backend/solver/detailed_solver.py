@@ -405,31 +405,163 @@ class DetailedSolver:
     def _solve_differential_method(self) -> SolutionMethod:
         steps = []
         
+        # Step 1: General Differential Relations
         steps.append(SolutionStep(
             step_number=1,
             title="Diferansiyel Bağıntılar",
-            explanation="Yük, kesme kuvveti ve moment arasındaki türev ilişkileri kullanılır.",
+            explanation="Yük, kesme kuvveti ve moment arasındaki türev ilişkileri kullanılır. Tekillik fonksiyonları (Macaulay parantezleri) kullanılarak tüm kiriş tek bir denklemle ifade edilir.",
             general_formula=r"\frac{dV}{dx} = -w(x), \quad \frac{dM}{dx} = V(x)"
         ))
+
+        # Construct Load Function w(x)
+        # We will build the LaTeX string manually for better control over engineering notation <x-a>^n
         
+        w_terms = []
+        v_terms = []
+        m_terms = []
+
+        # 1. Supports (Reactions)
+        # Reactions are point loads. Upward reaction is positive load.
+        # w(x) includes R * <x-a>^-1
+        for reaction in self.reactions:
+            pos = reaction.position
+            mag = reaction.vertical
+            if abs(mag) < 1e-6: continue
+            
+            # Load term: R * <x-a>^-1
+            sign = "+" if mag >= 0 else "-"
+            w_terms.append(f"{sign} {abs(mag):.2f} \\langle x - {pos:.2f} \\rangle^{{-1}}")
+            
+            # Shear term: Integral of -w. 
+            # V_jump = +R. So V term is +R * <x-a>^0
+            # Wait, dV/dx = -w. So V = - int w.
+            # If w has +R (upward force), then -int w has -R.
+            # BUT, standard convention: Upward force causes upward jump in Shear.
+            # So V term should be +R * <x-a>^0.
+            # This means our differential relation dV/dx = -w assumes w is downward positive?
+            # Let's stick to: V(x) = Sum of forces to the left.
+            # Upward force R at a: +R * <x-a>^0
+            v_terms.append(f"{sign} {abs(mag):.2f} \\langle x - {pos:.2f} \\rangle^{{0}}")
+            
+            # Moment term: Integral of V.
+            # M term: +R * <x-a>^1
+            m_terms.append(f"{sign} {abs(mag):.2f} \\langle x - {pos:.2f} \\rangle^{{1}}")
+
+            # Moment reaction (for fixed supports)
+            if abs(reaction.moment) > 1e-6:
+                # Reaction moment M_R. CCW is positive.
+                # A concentrated moment M0 at a.
+                # In V diagram: No effect (except via reactions).
+                # In M diagram: Jump of -M0 (if CCW) or +M0?
+                # Standard: CCW moment causes downward jump in Moment diagram?
+                # Let's check: M(x) = Sum of moments to the left.
+                # M0 (CCW) at a. For x > a, M0 is included.
+                # Sum M = M0 + ... 
+                # So term is +M0 * <x-a>^0.
+                m_sign = "+" if reaction.moment >= 0 else "-"
+                m_terms.append(f"{m_sign} {abs(reaction.moment):.2f} \\langle x - {pos:.2f} \\rangle^{{0}}")
+                
+                # In V: Moment load corresponds to doublet in w?
+                # w term: M * <x-a>^-2
+                # V term: M * <x-a>^-1 (Dirac in Shear?) - usually ignored in V diagram drawing but mathematically there.
+                pass
+
+        # 2. Point Loads
+        for load in self.payload.point_loads:
+            pos = load.position
+            # Resolve vertical component
+            angle_rad = math.radians(load.angle_deg)
+            vertical = load.magnitude * math.sin(angle_rad) # Upward is positive y
+            # But load magnitude is usually just force.
+            # If angle is -90 (down), sin is -1. Vertical is -Mag.
+            
+            if abs(vertical) < 1e-6: continue
+            
+            # Upward force P: +P * <x-a>^0 in V.
+            sign = "+" if vertical >= 0 else "-"
+            v_terms.append(f"{sign} {abs(vertical):.2f} \\langle x - {pos:.2f} \\rangle^{{0}}")
+            m_terms.append(f"{sign} {abs(vertical):.2f} \\langle x - {pos:.2f} \\rangle^{{1}}")
+            
+            # w term: P * <x-a>^-1
+            w_terms.append(f"{sign} {abs(vertical):.2f} \\langle x - {pos:.2f} \\rangle^{{-1}}")
+
+        # 3. UDLs
+        for udl in self.payload.udls:
+            start = udl.start
+            end = udl.end
+            mag = udl.magnitude
+            is_down = udl.direction == "down"
+            # Downward UDL: w = q.
+            # Upward force is positive for V.
+            # Downward load q: Force is -q per length.
+            # V term: -q * <x-start>^1 + q * <x-end>^1
+            
+            eff_mag = -mag if is_down else mag
+            sign = "+" if eff_mag >= 0 else "-"
+            
+            if udl.shape == "uniform":
+                # w(x) = q <x-a>^0 - q <x-b>^0
+                w_terms.append(f"{sign} {mag:.2f} \\langle x - {start:.2f} \\rangle^{{0}}")
+                w_terms.append(f"{'-' if sign == '+' else '+'} {mag:.2f} \\langle x - {end:.2f} \\rangle^{{0}}")
+                
+                # V(x) = q <x-a>^1 - q <x-b>^1
+                v_terms.append(f"{sign} {mag:.2f} \\langle x - {start:.2f} \\rangle^{{1}}")
+                v_terms.append(f"{'-' if sign == '+' else '+'} {mag:.2f} \\langle x - {end:.2f} \\rangle^{{1}}")
+                
+                # M(x) = q/2 <x-a>^2 - q/2 <x-b>^2
+                m_terms.append(f"{sign} {mag/2:.2f} \\langle x - {start:.2f} \\rangle^{{2}}")
+                m_terms.append(f"{'-' if sign == '+' else '+'} {mag/2:.2f} \\langle x - {end:.2f} \\rangle^{{2}}")
+
+        # 4. Moment Loads
+        for moment in self.payload.moment_loads:
+            pos = moment.position
+            mag = moment.magnitude
+            is_ccw = moment.direction == "ccw"
+            # CCW Moment M0:
+            # M term: +M0 * <x-a>^0
+            sign = "+" if is_ccw else "-"
+            m_terms.append(f"{sign} {mag:.2f} \\langle x - {pos:.2f} \\rangle^{{0}}")
+
+
+        # Format equations
+        def format_eq(terms):
+            if not terms: return "0"
+            s = " ".join(terms)
+            # Clean up: "+ -" -> "- ", first "+" remove
+            if s.startswith("+ "): s = s[2:]
+            return s
+
+        w_eq = format_eq(w_terms)
+        v_eq = format_eq(v_terms)
+        m_eq = format_eq(m_terms)
+
         steps.append(SolutionStep(
             step_number=2,
-            title="Yük Entegrasyonu",
-            explanation="Yayılı yük fonksiyonunun entegrali kesme kuvvetini verir.",
-            general_formula=r"V(x) = V_0 - \int w(x) dx"
+            title="Yük Fonksiyonu w(x)",
+            explanation="Tüm dış yükler ve mesnet tepkileri tekillik fonksiyonları ile ifade edilir.",
+            substituted_formula=f"w(x) = {w_eq}"
         ))
         
         steps.append(SolutionStep(
             step_number=3,
-            title="Kesme Entegrasyonu",
-            explanation="Kesme kuvveti fonksiyonunun entegrali momenti verir.",
-            general_formula=r"M(x) = M_0 + \int V(x) dx"
+            title="Kesme Kuvveti Fonksiyonu V(x)",
+            explanation="Yük fonksiyonunun entegrali alınarak kesme kuvveti denklemi elde edilir.",
+            general_formula=r"V(x) = \int w(x) dx",
+            substituted_formula=f"V(x) = {v_eq}"
+        ))
+        
+        steps.append(SolutionStep(
+            step_number=4,
+            title="Moment Fonksiyonu M(x)",
+            explanation="Kesme kuvveti fonksiyonunun entegrali alınarak moment denklemi elde edilir.",
+            general_formula=r"M(x) = \int V(x) dx",
+            substituted_formula=f"M(x) = {m_eq}"
         ))
 
         return SolutionMethod(
             method_name="differential_method",
             method_title="Diferansiyel Yöntem",
-            description="Matematiksel türev ve integral bağıntıları ile çözüm.",
+            description="Tekillik fonksiyonları (Macaulay Yöntemi) ile analitik çözüm.",
             steps=steps,
             recommended=False,
             recommendation_reason="Karmaşık yayılı yüklerde matematiksel kesinlik sağlar."
