@@ -8,6 +8,7 @@ from beam_solver_backend.main import create_app
 
 @pytest.mark.asyncio
 async def test_solve_endpoint_success():
+    """Exercise the /solve endpoint and validate core payload fields."""
     app = create_app()
     transport = httpx.ASGITransport(app=app)
     payload = {
@@ -40,6 +41,7 @@ async def test_solve_endpoint_success():
 
 @pytest.mark.asyncio
 async def test_solve_endpoint_validation_error():
+    """Ensure schema validation failures propagate as HTTP 422 responses."""
     app = create_app()
     transport = httpx.ASGITransport(app=app)
     payload = {

@@ -3,17 +3,18 @@ from __future__ import annotations
 from pydantic import ValidationError
 from pytest import approx, raises
 
-from beam_solver_backend.schemas.beam import (
+from beam_solver_backend.schemas import (
     MomentLoad,
     PointLoad,
     SolveRequest,
     Support,
     UniformDistributedLoad,
 )
-from beam_solver_backend.solver.static_solver import solve_beam
+from beam_solver_backend.solvers import solve_beam
 
 
 def _supports(length: float):
+    """Create the default simply supported boundary conditions for a span."""
     return [
         Support(id="A", type="pin", position=0.0),
         Support(id="B", type="roller", position=length),
@@ -21,10 +22,12 @@ def _supports(length: float):
 
 
 def _reaction_map(result):
+    """Convert reaction objects into a lookup dictionary keyed by support id."""
     return {reaction.support_id: reaction for reaction in result.reactions}
 
 
 def test_uniform_udl_reactions_and_moment():
+    """Ensure a full-span UDL splits reactions evenly and peaks at expected moment."""
     request = SolveRequest(
         length=6.0,
         supports=_supports(6.0),
@@ -44,6 +47,7 @@ def test_uniform_udl_reactions_and_moment():
 
 
 def test_point_load_with_angle():
+    """Check vertical reactions and shear diagram for an inclined point load."""
     request = SolveRequest(
         length=4.0,
         supports=_supports(4.0),
@@ -62,6 +66,7 @@ def test_point_load_with_angle():
 
 
 def test_horizontal_load_generates_axial_reaction():
+    """Verify that a horizontal point load only generates axial reaction components."""
     request = SolveRequest(
         length=5.0,
         supports=_supports(5.0),
@@ -80,6 +85,7 @@ def test_horizontal_load_generates_axial_reaction():
 
 
 def test_concentrated_moment_effect():
+    """Confirm applied moments shift support reactions and diagram magnitudes."""
     request = SolveRequest(
         length=10.0,
         supports=_supports(10.0),
@@ -96,6 +102,7 @@ def test_concentrated_moment_effect():
 
 
 def test_triangular_increasing_distributed_load():
+    """Validate coverage of triangular UDL handling and resulting max moment."""
     request = SolveRequest(
         length=6.0,
         supports=_supports(6.0),
@@ -122,6 +129,7 @@ def test_triangular_increasing_distributed_load():
 
 
 def test_area_method_recommended_for_vertical_point_loads():
+    """Ensure method recommendation metadata remains consistent for point loads."""
     request = SolveRequest(
         length=8.0,
         supports=_supports(8.0),
@@ -139,6 +147,7 @@ def test_area_method_recommended_for_vertical_point_loads():
 
 
 def test_invalid_point_load_position():
+    """Reject point loads located outside the beam domain."""
     with raises(ValidationError):
         SolveRequest(
             length=3.0,
@@ -148,6 +157,7 @@ def test_invalid_point_load_position():
 
 
 def test_invalid_support_count():
+    """Reject simply supported configurations with more than two supports."""
     with raises(ValidationError):
         SolveRequest(
             length=5.0,
@@ -160,6 +170,7 @@ def test_invalid_support_count():
 
 
 def test_moment_extrema_metadata_with_partial_udl():
+    """Report the correct metadata for mixed load cases and missing negative peaks."""
     request = SolveRequest(
         length=6.0,
         supports=_supports(6.0),
@@ -177,6 +188,7 @@ def test_moment_extrema_metadata_with_partial_udl():
 
 
 def test_reference_case_with_applied_moment_and_overhang():
+    """Exercise solver with overhang, UDL and applied moment to guard regressions."""
     request = SolveRequest(
         length=6.0,
         supports=[

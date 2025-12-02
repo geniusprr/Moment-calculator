@@ -1,18 +1,25 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 
-from beam_solver_backend.schemas.beam import SolveRequest, SolveResponse
-from beam_solver_backend.schemas.chimney import ChimneyPeriodRequest, ChimneyPeriodResponse
-from beam_solver_backend.solver.static_solver import solve_beam
-from beam_solver_backend.solver.cantilever_solver import solve_cantilever_beam
-from beam_solver_backend.solver.chimney import calculate_fundamental_period
+from beam_solver_backend.schemas import (
+    ChimneyPeriodRequest,
+    ChimneyPeriodResponse,
+    SolveRequest,
+    SolveResponse,
+)
+from beam_solver_backend.solvers import (
+    calculate_fundamental_period,
+    solve_beam,
+    solve_cantilever_beam,
+)
 
 router = APIRouter()
 
 
 @router.post("/solve", response_model=SolveResponse)
 async def solve(payload: SolveRequest) -> SolveResponse:
+    """Solve either a simply supported or cantilever beam based on the request."""
     try:
         if payload.beam_type == "cantilever":
             return solve_cantilever_beam(payload)
@@ -23,4 +30,5 @@ async def solve(payload: SolveRequest) -> SolveResponse:
 
 @router.post("/chimney/period", response_model=ChimneyPeriodResponse)
 async def chimney_period(payload: ChimneyPeriodRequest) -> ChimneyPeriodResponse:
+    """Return the first-mode dynamic period for a slender chimney."""
     return calculate_fundamental_period(payload)

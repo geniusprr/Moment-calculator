@@ -1,6 +1,6 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
-from typing import List, Literal, Optional, Any
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field, ValidationInfo, model_validator
 
@@ -9,7 +9,6 @@ Direction = Literal["down", "up"]
 MomentDirection = Literal["ccw", "cw"]
 DistributedLoadShape = Literal["uniform", "triangular_increasing", "triangular_decreasing"]
 BeamType = Literal["simply_supported", "cantilever"]
-AreaTrend = Literal["increase", "decrease", "constant"]
 
 
 class Support(BaseModel):
@@ -51,6 +50,7 @@ class SolveRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_domain(self, info: ValidationInfo) -> "SolveRequest":
+        """Ensure the provided loads and supports form a valid beam model."""
         length = self.length
 
         if self.beam_type == "simply_supported":
@@ -128,70 +128,25 @@ class SolveMeta(BaseModel):
     max_absolute_position: Optional[float] = None
 
 
-# --- Detailed Solution Types ---
-
-class BeamSectionHighlight(BaseModel):
-    start: float
-    end: float
-    label: Optional[str] = None
-
-
-class ShearRegionSamples(BaseModel):
-    x: List[float]
-    shear: List[float]
-
-
-class MomentSegmentSamples(BaseModel):
-    x: List[float]
-    moment: List[float]
-
-
-class AreaMethodVisualization(BaseModel):
-    shape: str
-    area_value: float
-    trend: AreaTrend
-    region: ShearRegionSamples
-    moment_segment: MomentSegmentSamples
-
-
-class SolutionStep(BaseModel):
-    step_number: int
-    title: str
-    explanation: str
-    general_formula: Optional[str] = None
-    substituted_formula: Optional[str] = None
-    numerical_result: Optional[str] = None
-    beam_section: Optional[BeamSectionHighlight] = None
-    area_visualization: Optional[AreaMethodVisualization] = None
-
-
-class SolutionMethod(BaseModel):
-    method_name: str
-    method_title: str
-    description: str
-    recommended: bool = False
-    recommendation_reason: Optional[str] = None
-    steps: List[SolutionStep]
-
-
-class BeamContext(BaseModel):
-    length: float
-    supports: List[Support]
-    point_loads: List[PointLoad]
-    udls: List[UniformDistributedLoad]
-    moment_loads: List[MomentLoad]
-
-
-class DetailedSolution(BaseModel):
-    methods: List[SolutionMethod]
-    diagram: Optional[DiagramData] = None
-    beam_context: Optional[BeamContext] = None
-
-
 class SolveResponse(BaseModel):
     reactions: List[SupportReaction]
     diagram: DiagramData
-    derivations: List[str]
     meta: SolveMeta
-    detailed_solutions: Optional[DetailedSolution] = None
 
+
+class ChimneyPeriodRequest(BaseModel):
+    height_m: float = Field(gt=1.0, description="Baca yüksekliği (m)")
+    elastic_modulus_gpa: float = Field(gt=0.0, description="Elastisite modülü (GPa)")
+    moment_inertia_m4: float = Field(gt=0.0, description="Kesit atalet momenti (m^4)")
+    mass_per_length_kgm: float = Field(gt=0.0, description="Doğrusal kütle (kg/m)")
+    tip_mass_kg: float = Field(default=0.0, ge=0.0, description="Serbest uçta ek kütle (kg)")
+
+
+class ChimneyPeriodResponse(BaseModel):
+    period_s: float
+    frequency_hz: float
+    angular_frequency_rad_s: float
+    flexural_rigidity_n_m2: float
+    effective_mass_kgm: float
+    mode_constant: float
+    notes: List[str]

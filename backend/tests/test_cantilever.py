@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from pytest import approx
 
-from beam_solver_backend.schemas.beam import PointLoad, SolveRequest, Support
-from beam_solver_backend.solver.cantilever_solver import solve_cantilever_beam
+from beam_solver_backend.schemas import PointLoad, SolveRequest, Support
+from beam_solver_backend.solvers import solve_cantilever_beam
 
 
 def test_cantilever_tip_load_reactions_and_moment():
+    """Validate cantilever reactions and fixed-end moment for a tip load."""
     request = SolveRequest(
         length=5.0,
         beam_type="cantilever",

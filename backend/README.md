@@ -1,6 +1,6 @@
 ﻿# Beam Solver Backend
 
-FastAPI tabanlı izostatik kiriş hesaplama servisi. NumPy ile reaksiyon, kesme ve moment diyagramlarını üretir; LaTeX formatlı türetim adımları döner.
+FastAPI tabanlı izostatik ve konsol kiriş hesaplama servisi. NumPy ile reaksiyonları, kesme/moment/normal diyagramlarını ve özet metaverisini üretir; detaylı türetim adımları tutulmaz.
 
 ## Kurulum
 1. Python 3.11 sürümünü kullanın.
@@ -26,11 +26,14 @@ FastAPI tabanlı izostatik kiriş hesaplama servisi. NumPy ile reaksiyon, kesme 
   ```
 
 ## Yapı
-- `beam_solver_backend/solver` mevzu statik hesap mantığını içerir.
-- `beam_solver_backend/api` FastAPI uç noktalarını barındırır.
-- `tests/` otomatik test senaryoları.
+- `beam_solver_backend/main.py` FastAPI uygulamasını kurar ve CORS + health endpointlerini yönetir.
+- `beam_solver_backend/api.py` `/api/solve` ve `/api/chimney/period` uç noktalarını tanımlar.
+- `beam_solver_backend/schemas.py` tüm Pydantic istek/yanıt modellerini tek dosyada toplar.
+- `beam_solver_backend/solvers.py` basit kiriş, konsol kiriş ve baca periyodu hesaplarını içerir.
+- `tests/` otomatik FastAPI ve solver testlerini barındırır.
 
 ## API
-- `POST /api/solve` — kiriş parametreleri gönderildiğinde reaksiyonlar, diyagram verisi ve LaTeX adımlarını döner.
+- `POST /api/solve` — Basit veya konsol kiriş parametrelerini alır, mesnet reaksiyonları ile diyagram verilerini (`x`, `shear`, `moment`, `normal`) ve metaveriyi (`recommendation`, moment ekstramaları, çözüm süresi) döner.
+- `POST /api/chimney/period` — Baca yüksekliği, EI ve kütle bilgileriyle ilk mod periyodunu, frekansını ve hesap notlarını raporlar.
 
 Sağlık kontrolü için `GET /health` uç noktasını kullanabilirsiniz.

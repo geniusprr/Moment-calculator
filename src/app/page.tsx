@@ -8,7 +8,6 @@ import { ChangeEvent, useCallback, useEffect, useMemo, useState, useTransition }
 import { BeamDiagrams } from "@/components/BeamDiagrams";
 import { BeamForm } from "@/components/BeamForm";
 import { BeamSketch, SketchContextTarget } from "@/components/BeamSketch";
-import { DetailedSolutionPanel } from "@/components/DetailedSolutionPanel";
 import { solveBeam, solveChimneyPeriod } from "@/lib/api";
 import KtoLogo from "../../assets/KtoLOGO.png";
 import type {
@@ -151,7 +150,6 @@ export default function HomePage() {
     null,
   );
   const [openSubmenu, setOpenSubmenu] = useState<string | null>(null);
-  const [isDetailedSolutionOpen, setIsDetailedSolutionOpen] = useState(false);
   const [chimneyInput, setChimneyInput] = useState({
     height_m: 60,
     elastic_modulus_gpa: 30,
@@ -969,7 +967,7 @@ export default function HomePage() {
             onClick={() => setView("onboarding")}
             className="flex items-center gap-3 transition hover:opacity-80"
           >
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-slate-800 to-slate-900 shadow-lg ring-1 ring-white/10">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white shadow-lg ring-1 ring-slate-200/80">
               <Image src={KtoLogo} alt="KTO Logo" className="h-8 w-8 object-contain" priority />
             </div>
             <div className="text-left">
@@ -1208,18 +1206,6 @@ export default function HomePage() {
                     <p className="mt-2 text-xs leading-relaxed text-cyan-100/90">{result.meta.recommendation.reason}</p>
                     <p className="mt-3 text-[11px] text-cyan-200/70">Mesnet reaksiyonlarından sonra bu yöntemle devam edin.</p>
                   </div>
-                )}
-
-                {result?.detailed_solutions && (
-                  <button
-                    onClick={() => setIsDetailedSolutionOpen(true)}
-                    className="flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-cyan-500 to-blue-500 px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:from-cyan-600 hover:to-blue-600 hover:shadow-xl"
-                  >
-                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                    Çözümü Göster
-                  </button>
                 )}
 
                 <div className="space-y-4">
@@ -1502,15 +1488,6 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* Detailed Solution Panel */}
-      {result?.detailed_solutions && (
-        <DetailedSolutionPanel
-          detailedSolution={result.detailed_solutions}
-          reactions={result.reactions}
-          isOpen={isDetailedSolutionOpen}
-          onClose={() => setIsDetailedSolutionOpen(false)}
-        />
-      )}
     </main>
   );
 }
