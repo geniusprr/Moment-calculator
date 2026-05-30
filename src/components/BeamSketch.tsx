@@ -34,6 +34,7 @@ interface BeamSketchProps {
   onPointLoadMagnitudeChange?: (id: string, magnitude: number) => void;
   onUdlMagnitudeChange?: (id: string, magnitude: number) => void;
   onMomentMagnitudeChange?: (id: string, magnitude: number) => void;
+  onLengthChange?: (length: number) => void;
 }
 
 interface DragState {
@@ -132,6 +133,7 @@ export function BeamSketch({
   onPointLoadMagnitudeChange,
   onUdlMagnitudeChange,
   onMomentMagnitudeChange,
+  onLengthChange,
 }: BeamSketchProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [dragState, setDragState] = useState<DragState | null>(null);
@@ -347,6 +349,12 @@ export function BeamSketch({
       event.preventDefault();
       event.stopPropagation();
 
+      try {
+        event.currentTarget.setPointerCapture(event.pointerId);
+      } catch (err) {
+        console.warn("Failed to set pointer capture:", err);
+      }
+
       const pointerValue = valueFromPointer(event.clientX);
       const currentValue = resolveCurrentPosition(target);
       const offset = pointerValue - currentValue;
@@ -381,6 +389,70 @@ export function BeamSketch({
     setEditingValue({ ...editingValue, value: event.target.value });
   }, [editingValue]);
 
+  const handleDimensionChange = useCallback(
+    (segStart: number, segEnd: number, newValue: number) => {
+      if (newValue <= 0 || isNaN(newValue)) return;
+      const newPosition = segStart + newValue;
+
+      const snap = (v: number) => Math.round(v * 100) / 100;
+      const targetPos = snap(newPosition);
+
+      // 1. Update supports at segEnd
+      supports.forEach((sup) => {
+        if (Math.abs(sup.position - segEnd) < 1e-4) {
+          const finalPos = clamp(targetPos, 0, beamLength);
+          onSupportPositionChange(sup.id, finalPos);
+        }
+      });
+
+      // 2. Update point loads at segEnd
+      pointLoads.forEach((load) => {
+        if (Math.abs(load.position - segEnd) < 1e-4) {
+          const finalPos = clamp(targetPos, 0, beamLength);
+          onPointLoadPositionChange(load.id, finalPos);
+        }
+      });
+
+      // 3. Update moment loads at segEnd
+      momentLoads.forEach((mom) => {
+        if (Math.abs(mom.position - segEnd) < 1e-4) {
+          const finalPos = clamp(targetPos, 0, beamLength);
+          onMomentPositionChange(mom.id, finalPos);
+        }
+      });
+
+      // 4. Update UDL starts and ends at segEnd
+      udls.forEach((udl) => {
+        if (Math.abs(udl.start - segEnd) < 1e-4) {
+          const finalPos = clamp(targetPos, 0, beamLength - 0.1);
+          onUdlRangeChange(udl.id, "start", finalPos);
+        }
+        if (Math.abs(udl.end - segEnd) < 1e-4) {
+          const finalPos = clamp(targetPos, udl.start + 0.1, beamLength);
+          onUdlRangeChange(udl.id, "end", finalPos);
+        }
+      });
+
+      // 5. Update beam length if segEnd is the end of the beam
+      if (Math.abs(beamLength - segEnd) < 1e-4) {
+        const finalPos = Math.max(0.1, targetPos);
+        onLengthChange?.(finalPos);
+      }
+    },
+    [
+      beamLength,
+      supports,
+      pointLoads,
+      momentLoads,
+      udls,
+      onSupportPositionChange,
+      onPointLoadPositionChange,
+      onMomentPositionChange,
+      onUdlRangeChange,
+      onLengthChange,
+    ]
+  );
+
   const handleValueInputBlur = useCallback(() => {
     if (!editingValue) return;
 
@@ -396,10 +468,17 @@ export function BeamSketch({
         case "moment":
           onMomentMagnitudeChange?.(editingValue.id, numValue);
           break;
+        case "dimension": {
+          const [startStr, endStr] = editingValue.id.split("_");
+          const start = parseFloat(startStr);
+          const end = parseFloat(endStr);
+          handleDimensionChange(start, end, numValue);
+          break;
+        }
       }
     }
     setEditingValue(null);
-  }, [editingValue, onPointLoadMagnitudeChange, onUdlMagnitudeChange, onMomentMagnitudeChange]);
+  }, [editingValue, onPointLoadMagnitudeChange, onUdlMagnitudeChange, onMomentMagnitudeChange, handleDimensionChange]);
 
   const handleValueInputKeyDown = useCallback((event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Enter") {
@@ -513,6 +592,7 @@ export function BeamSketch({
 
               <div
                 className="cursor-ew-resize"
+                style={{ touchAction: "none" }}
                 onPointerDown={beginDrag({ type: "support", id: support.id })}
                 title={support.reaction ? `Düşey=${support.reaction.vertical.toFixed(2)} kN${Math.abs(support.reaction.axial) > 1e-3 ? `, Yatay=${support.reaction.axial.toFixed(2)} kN` : ""}` : ""}
               >
@@ -550,7 +630,7 @@ export function BeamSketch({
           <div
             key={load.id}
             className="absolute flex translate-x-[-50%] flex-col items-center cursor-ew-resize z-40"
-            style={{ left: `${2 + (load.percent * 0.96)}%`, bottom: 'calc(50% + 12px)' }}
+            style={{ left: `${2 + (load.percent * 0.96)}%`, bottom: 'calc(50% + 12px)', touchAction: "none" }}
             onContextMenu={(event) => openContextMenu(event, { kind: "point", id: load.id, x: load.position })}
             onPointerDown={beginDrag({ type: "point", id: load.id })}
           >
@@ -715,6 +795,7 @@ export function BeamSketch({
 
               <div
                 className="absolute inset-0 cursor-grab transition hover:opacity-90"
+                style={{ touchAction: "none" }}
                 onPointerDown={beginDrag({ type: "udl-center", id: load.id })}
                 title="Yayılı yükü sürükle"
               >
@@ -758,14 +839,14 @@ export function BeamSketch({
 
               <div
                 className="absolute z-40 w-8 translate-x-[-50%] cursor-ew-resize"
-                style={{ left: "0%", top: "8px", height: `${UDL_AREA_HEIGHT - 16}px` }}
+                style={{ left: "0%", top: "8px", height: `${UDL_AREA_HEIGHT - 16}px`, touchAction: "none" }}
                 onPointerDown={beginDrag({ type: "udl-start", id: load.id })}
                 title="Yayılı yük başlangıcını sürükle"
               />
 
               <div
                 className="absolute z-40 w-8 translate-x-[-50%] cursor-ew-resize"
-                style={{ left: "100%", top: "8px", height: `${UDL_AREA_HEIGHT - 16}px` }}
+                style={{ left: "100%", top: "8px", height: `${UDL_AREA_HEIGHT - 16}px`, touchAction: "none" }}
                 onPointerDown={beginDrag({ type: "udl-end", id: load.id })}
                 title="Yayılı yük bitişini sürükle"
               />
@@ -778,7 +859,7 @@ export function BeamSketch({
           <div
             key={moment.id}
             className="absolute flex translate-x-[-50%] flex-col items-center gap-1 cursor-ew-resize z-40"
-            style={{ left: `${2 + (moment.percent * 0.96)}%`, bottom: 'calc(50% + 14px)' }}
+            style={{ left: `${2 + (moment.percent * 0.96)}%`, bottom: 'calc(50% + 14px)', touchAction: "none" }}
             onContextMenu={(event) => openContextMenu(event, { kind: "moment", id: moment.id, x: moment.position })}
             onPointerDown={beginDrag({ type: "moment", id: moment.id })}
           >
@@ -860,13 +941,40 @@ export function BeamSketch({
                   top: "calc(50% + 68px)"
                 }}
               />
-              {/* Distance text */}
-              <span
-                className="absolute text-xs font-medium text-slate-300 bg-slate-800/80 px-1.5 py-0.5 rounded"
-                style={{ left: `${2 + midPercent * 0.96}%`, transform: "translateX(-50%)", top: "calc(50% + 73px)" }}
-              >
-                {text}
-              </span>
+              {/* Distance text - clickable to edit */}
+              {editingValue?.type === "dimension" && editingValue.id === `${seg.start}_${seg.end}` ? (
+                <input
+                  type="number"
+                  autoFocus
+                  step="0.01"
+                  min="0.01"
+                  className="absolute w-16 rounded px-1.5 py-0.5 text-xs font-semibold text-center outline-none ring-2 ring-cyan-400 bg-slate-800 text-cyan-200 z-50"
+                  style={{ left: `${2 + midPercent * 0.96}%`, transform: "translateX(-50%)", top: "calc(50% + 73px)" }}
+                  value={editingValue.value}
+                  onChange={handleValueInputChange}
+                  onBlur={handleValueInputBlur}
+                  onKeyDown={handleValueInputKeyDown}
+                  onClick={(e) => e.stopPropagation()}
+                  onPointerDown={(e) => e.stopPropagation()}
+                />
+              ) : (
+                <span
+                  className="absolute text-xs font-medium text-slate-300 bg-slate-800/80 px-1.5 py-0.5 rounded cursor-pointer hover:ring-2 hover:ring-white/60 transition-all pointer-events-auto"
+                  style={{ left: `${2 + midPercent * 0.96}%`, transform: "translateX(-50%)", top: "calc(50% + 73px)" }}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setEditingValue({
+                      type: "dimension",
+                      id: `${seg.start}_${seg.end}`,
+                      value: (seg.end - seg.start).toFixed(2),
+                    });
+                  }}
+                  title="Mesafeyi değiştirmek için tıklayın"
+                >
+                  {text}
+                </span>
+              )}
             </div>
           );
         })}

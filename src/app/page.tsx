@@ -1221,6 +1221,7 @@ export default function HomePage() {
                 onPointLoadMagnitudeChange={handlePointLoadMagnitudeChange}
                 onUdlMagnitudeChange={handleUdlMagnitudeChange}
                 onMomentMagnitudeChange={handleMomentMagnitudeChange}
+                onLengthChange={setLengthAndClear}
               />
               <BeamDiagrams
                 x={diagramData.x}
