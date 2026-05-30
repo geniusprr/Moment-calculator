@@ -11,6 +11,8 @@ interface BeamDiagramsProps {
   normal: number[];
   loading?: boolean;
   shearMarkers?: number[];
+  deflection?: number[];
+  rotation?: number[];
 }
 
 const Plot = dynamic(() => import("react-plotly.js"), { ssr: false });
@@ -203,7 +205,16 @@ function diagramData(
   return traces;
 }
 
-export function BeamDiagrams({ x, shear, moment, normal, loading = false, shearMarkers = [] }: BeamDiagramsProps) {
+export function BeamDiagrams({
+  x,
+  shear,
+  moment,
+  normal,
+  deflection,
+  rotation,
+  loading = false,
+  shearMarkers = [],
+}: BeamDiagramsProps) {
   const shearPlot = useMemo(
     () => {
       const data = diagramData(x, shear, "#38bdf8", "T", { includeZeroBaseline: true, segmentBySign: true });
@@ -255,6 +266,30 @@ export function BeamDiagrams({ x, shear, moment, normal, loading = false, shearM
     [x, normal]
   );
 
+  const deflectionPlot = useMemo(
+    () => ({
+      data: diagramData(x, deflection ?? [], "#ec4899", "w", {
+        includeZeroBaseline: true,
+        fillToZero: true,
+        fillColor: "rgba(236,72,153,0.15)"
+      }),
+      layout: diagramLayout("w (mm)", "#ec4899", "reversed")
+    }),
+    [x, deflection]
+  );
+
+  const rotationPlot = useMemo(
+    () => ({
+      data: diagramData(x, (rotation ?? []).map((r) => r * 1000.0), "#a855f7", "θ", {
+        includeZeroBaseline: true,
+        fillToZero: true,
+        fillColor: "rgba(168,85,247,0.15)"
+      }),
+      layout: diagramLayout("θ (mrad)", "#a855f7")
+    }),
+    [x, rotation]
+  );
+
   const hasData = x.length > 0;
 
   return (
@@ -262,7 +297,7 @@ export function BeamDiagrams({ x, shear, moment, normal, loading = false, shearM
       <div className="flex items-center justify-between">
         <div>
           <span className="tag">Diyagramlar</span>
-          <p className="text-sm text-slate-400">Kesme, moment ve eksenel kuvvet diyagramları</p>
+          <p className="text-sm text-slate-400">Kesme, moment, eksenel kuvvet, sehim ve eğim diyagramları</p>
         </div>
         {loading && <span className="text-xs uppercase tracking-wide text-slate-400">Çözülüyor...</span>}
       </div>
@@ -274,6 +309,14 @@ export function BeamDiagrams({ x, shear, moment, normal, loading = false, shearM
           <Plot data={shearPlot.data} layout={shearPlot.layout} config={{ displayModeBar: false, responsive: true }} style={{ width: "100%", height: "260px" }} />
           {/* Moment at the bottom, with flipped sign */}
           <Plot data={momentPlot.data} layout={momentPlot.layout} config={{ displayModeBar: false, responsive: true }} style={{ width: "100%", height: "260px" }} />
+          {/* Deflection */}
+          {deflection && deflection.length > 0 && (
+            <Plot data={deflectionPlot.data} layout={deflectionPlot.layout} config={{ displayModeBar: false, responsive: true }} style={{ width: "100%", height: "260px" }} />
+          )}
+          {/* Rotation */}
+          {rotation && rotation.length > 0 && (
+            <Plot data={rotationPlot.data} layout={rotationPlot.layout} config={{ displayModeBar: false, responsive: true }} style={{ width: "100%", height: "260px" }} />
+          )}
         </div>
       ) : (
         <div className="panel-muted flex h-[360px] items-center justify-center text-sm text-slate-500">

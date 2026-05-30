@@ -15,6 +15,11 @@ from beam_solver_backend.schemas import (
     SolveRequest,
     SolveResponse,
     SupportReaction,
+    DetailedSolution,
+    SolutionMethod,
+    SolutionStep,
+    BeamSectionHighlight,
+    AreaMethodVisualization,
 )
 
 DEFAULT_SAMPLING_POINTS = 401
@@ -258,76 +263,6 @@ def _locate_shear_zero(
     return 0.5 * (lo + hi)
 
 
-def _determine_method_recommendation(payload: SolveRequest) -> MethodRecommendation:
-    """Return a simple method recommendation payload for the UI."""
-    return MethodRecommendation(
-        method="area",
-        title="Alan Yontemi",
-        reason="Standart cozum yontemi.",
-    )
-
-
-def _moment_sign(direction) -> float:
-    """Map textual moment direction to a numerical sign."""
-    return 1.0 if direction == "ccw" else -1.0
-
-
-def _compute_reactions(payload: SolveRequest) -> List[SupportReaction]:
-    """Solve statics for a simply supported beam and return support reactions."""
-    supports_sorted = sorted(payload.supports, key=lambda support: support.position)
-    support_a, support_b = supports_sorted
-    span = support_b.position - support_a.position
-    if span <= 0:
-        raise ValueError("Right support must be placed after the left support.")
-
-    total_vertical = 0.0
-    total_moment_about_a = 0.0
-    total_axial = 0.0
-
-    for load in payload.point_loads:
-        vertical = _vertical_component(load)
-        axial = _axial_component(load)
-        total_vertical += vertical
-        total_axial += axial
-        lever_arm = load.position - support_a.position
-        total_moment_about_a += vertical * lever_arm
-
-    for udl in payload.udls:
-        equivalent_force, centroid = _udl_equivalent_force_and_centroid(udl)
-        total_vertical += equivalent_force
-        total_moment_about_a += equivalent_force * (centroid - support_a.position)
-
-    for moment in payload.moment_loads:
-        total_moment_about_a += moment.magnitude * _moment_sign(moment.direction)
-
-    if math.isclose(span, 0.0):
-        raise ValueError("Support span cannot be zero.")
-
-    reaction_b_vertical = total_moment_about_a / span
-    reaction_a_vertical = total_vertical - reaction_b_vertical
-    reaction_a_axial = -total_axial
-    reaction_b_axial = 0.0
-
-    reactions = [
-        SupportReaction(
-            support_id=support_a.id,
-            support_type=support_a.type,
-            position=_format_float(support_a.position),
-            vertical=_format_float(reaction_a_vertical),
-            axial=_format_float(reaction_a_axial),
-        ),
-        SupportReaction(
-            support_id=support_b.id,
-            support_type=support_b.type,
-            position=_format_float(support_b.position),
-            vertical=_format_float(reaction_b_vertical),
-            axial=_format_float(reaction_b_axial),
-        ),
-    ]
-
-    return reactions
-
-
 def _shear_diagram(payload: SolveRequest, x_axis: np.ndarray, reactions: List[SupportReaction]) -> np.ndarray:
     """Build the shear diagram by superposing reactions, point loads and UDLs."""
     shear = np.zeros_like(x_axis, dtype=float)
@@ -345,20 +280,6 @@ def _shear_diagram(payload: SolveRequest, x_axis: np.ndarray, reactions: List[Su
     return shear
 
 
-def _normal_diagram(payload: SolveRequest, x_axis: np.ndarray, reactions: List[SupportReaction]) -> np.ndarray:
-    """Compute the axial force diagram using horizontal components of loads."""
-    normal = np.zeros_like(x_axis, dtype=float)
-
-    for reaction in reactions:
-        normal += reaction.axial * (x_axis >= reaction.position)
-
-    for load in payload.point_loads:
-        axial = _axial_component(load)
-        normal += axial * (x_axis >= load.position)
-
-    return normal
-
-
 def _moment_diagram(payload: SolveRequest, x_axis: np.ndarray, reactions: List[SupportReaction]) -> np.ndarray:
     """Integrate shear effects and applied moments to obtain bending moment values."""
     moment = np.zeros_like(x_axis, dtype=float)
@@ -366,7 +287,7 @@ def _moment_diagram(payload: SolveRequest, x_axis: np.ndarray, reactions: List[S
     for reaction in reactions:
         offsets = np.maximum(x_axis - reaction.position, 0.0)
         moment += reaction.vertical * offsets
-        if hasattr(reaction, "moment"):
+        if getattr(reaction, "moment", 0.0) != 0.0:
             moment += getattr(reaction, "moment", 0.0) * (x_axis >= reaction.position)
 
     for load in payload.point_loads:
@@ -384,135 +305,90 @@ def _moment_diagram(payload: SolveRequest, x_axis: np.ndarray, reactions: List[S
     return moment
 
 
-def solve_beam(payload: SolveRequest) -> SolveResponse:
-    """Public entry point that returns reactions plus shear/moment/normal diagrams."""
-    start_time = perf_counter()
-    reactions = _compute_reactions(payload)
-    recommendation = _determine_method_recommendation(payload)
-
-    sampling_points = DEFAULT_SAMPLING_POINTS
-    base_axis = np.linspace(0.0, payload.length, num=sampling_points, dtype=float, endpoint=True)
-
-    critical_points = base_axis.tolist()
-    for support in payload.supports:
-        _add_unique_point(critical_points, support.position, payload.length)
-    for load in payload.point_loads:
-        _add_unique_point(critical_points, load.position, payload.length)
-    for udl in payload.udls:
-        _add_unique_point(critical_points, udl.start, payload.length)
-        _add_unique_point(critical_points, udl.end, payload.length)
-    for moment_load in payload.moment_loads:
-        _add_unique_point(critical_points, moment_load.position, payload.length)
-
-    x_axis = np.array(sorted(critical_points), dtype=float)
-
-    shear = _shear_diagram(payload, x_axis, reactions)
-    moment = _moment_diagram(payload, x_axis, reactions)
-    normal = _normal_diagram(payload, x_axis, reactions)
-
-    moment_extrema = _compute_moment_extrema(payload, reactions, x_axis, shear)
-
-    duration_ms = (perf_counter() - start_time) * 1000.0
-
-    max_positive = moment_extrema.get("max_positive")
-    min_negative = moment_extrema.get("min_negative")
-    max_absolute = moment_extrema.get("max_absolute")
-
-    diagram_data = DiagramData(
-        x=[_format_float(v) for v in x_axis],
-        shear=[_format_float(v) for v in shear],
-        moment=[_format_float(v) for v in moment],
-        normal=[_format_float(v) for v in normal],
-    )
-
-    return SolveResponse(
-        reactions=reactions,
-        diagram=diagram_data,
-        meta=SolveMeta(
-            solve_time_ms=_format_float(duration_ms),
-            validation_warnings=[],
-            recommendation=recommendation,
-            max_positive_moment=_format_float(max_positive[1]) if max_positive else None,
-            max_positive_position=_format_float(max_positive[0]) if max_positive else None,
-            min_negative_moment=_format_float(min_negative[1]) if min_negative else None,
-            min_negative_position=_format_float(min_negative[0]) if min_negative else None,
-            max_absolute_moment=_format_float(max_absolute[1]) if max_absolute else None,
-            max_absolute_position=_format_float(max_absolute[0]) if max_absolute else None,
-        ),
+def _determine_method_recommendation(payload: SolveRequest) -> MethodRecommendation:
+    """Return a simple method recommendation payload for the UI."""
+    return MethodRecommendation(
+        method="area",
+        title="Alan Yontemi",
+        reason="Standart cozum yontemi.",
     )
 
 
-def _compute_cantilever_reactions(payload: SolveRequest) -> List[SupportReaction]:
-    """Resolve the single fixed support reactions for a cantilever beam."""
-    support = payload.supports[0]
-    total_vertical = 0.0
-    total_axial = 0.0
-    total_moment_about_support = 0.0
+def _moment_sign(direction) -> float:
+    """Map textual moment direction to a numerical sign."""
+    return 1.0 if direction == "ccw" else -1.0
 
+
+def macaulay(x: np.ndarray, a: float, n: int) -> np.ndarray:
+    """Evaluate Macaulay bracket discontinuity function <x - a>^n."""
+    mask = x >= a
+    if n == 0:
+        return np.where(mask, 1.0, 0.0)
+    return np.where(mask, (x - a) ** n, 0.0)
+
+
+def get_applied_loads_at_x(x: float, payload: SolveRequest) -> Tuple[float, float, float]:
+    """Evaluate applied load bending moment, EI*theta and EI*w at coordinate x."""
+    x_arr = np.array([x], dtype=float)
+    moment = 0.0
+    theta = 0.0
+    w = 0.0
+
+    # Point loads
     for load in payload.point_loads:
-        vertical = _vertical_component(load)
-        axial = _axial_component(load)
-        total_vertical += vertical
-        total_axial += axial
-        lever = load.position - support.position
-        total_moment_about_support += vertical * lever
+        p_val = _vertical_component(load)  # downward positive
+        pos = load.position
+        moment -= p_val * macaulay(x_arr, pos, 1)[0]
+        theta += (p_val / 2.0) * macaulay(x_arr, pos, 2)[0]
+        w += (p_val / 6.0) * macaulay(x_arr, pos, 3)[0]
 
+    # Moment loads
+    for m_load in payload.moment_loads:
+        signed_t = m_load.magnitude * _moment_sign(m_load.direction)  # CCW positive
+        pos = m_load.position
+        moment += signed_t * macaulay(x_arr, pos, 0)[0]
+        theta -= signed_t * macaulay(x_arr, pos, 1)[0]
+        w -= (signed_t / 2.0) * macaulay(x_arr, pos, 2)[0]
+
+    # UDLs
     for udl in payload.udls:
-        equivalent_force, centroid = _udl_equivalent_force_and_centroid(udl)
-        total_vertical += equivalent_force
-        total_moment_about_support += equivalent_force * (centroid - support.position)
+        q = udl.magnitude * _udl_sign(udl)  # downward positive
+        a_pos, b_pos = udl.start, udl.end
+        L_u = b_pos - a_pos
+        if L_u <= 0:
+            continue
+        if udl.shape == "uniform":
+            moment -= (q / 2.0) * (macaulay(x_arr, a_pos, 2)[0] - macaulay(x_arr, b_pos, 2)[0])
+            theta += (q / 6.0) * (macaulay(x_arr, a_pos, 3)[0] - macaulay(x_arr, b_pos, 3)[0])
+            w += (q / 24.0) * (macaulay(x_arr, a_pos, 4)[0] - macaulay(x_arr, b_pos, 4)[0])
+        elif udl.shape == "triangular_increasing":
+            moment -= (q / (6.0 * L_u)) * (macaulay(x_arr, a_pos, 3)[0] - macaulay(x_arr, b_pos, 3)[0]) + (q / 2.0) * macaulay(x_arr, b_pos, 2)[0]
+            theta += (q / (24.0 * L_u)) * (macaulay(x_arr, a_pos, 4)[0] - macaulay(x_arr, b_pos, 4)[0]) - (q / 6.0) * macaulay(x_arr, b_pos, 3)[0]
+            w += (q / (120.0 * L_u)) * (macaulay(x_arr, a_pos, 5)[0] - macaulay(x_arr, b_pos, 5)[0]) - (q / 24.0) * macaulay(x_arr, b_pos, 4)[0]
+        elif udl.shape == "triangular_decreasing":
+            moment_udl = (q / 2.0) * (macaulay(x_arr, a_pos, 2)[0] - macaulay(x_arr, b_pos, 2)[0])
+            theta_udl = (q / 6.0) * (macaulay(x_arr, a_pos, 3)[0] - macaulay(x_arr, b_pos, 3)[0])
+            w_udl = (q / 24.0) * (macaulay(x_arr, a_pos, 4)[0] - macaulay(x_arr, b_pos, 4)[0])
 
-    for moment in payload.moment_loads:
-        total_moment_about_support += moment.magnitude * _moment_sign(moment.direction)
+            moment_inc = (q / (6.0 * L_u)) * (macaulay(x_arr, a_pos, 3)[0] - macaulay(x_arr, b_pos, 3)[0]) + (q / 2.0) * macaulay(x_arr, b_pos, 2)[0]
+            theta_inc = (q / (24.0 * L_u)) * (macaulay(x_arr, a_pos, 4)[0] - macaulay(x_arr, b_pos, 4)[0]) - (q / 6.0) * macaulay(x_arr, b_pos, 3)[0]
+            w_inc = (q / (120.0 * L_u)) * (macaulay(x_arr, a_pos, 5)[0] - macaulay(x_arr, b_pos, 5)[0]) - (q / 24.0) * macaulay(x_arr, b_pos, 4)[0]
 
-    reaction_vertical = total_vertical
-    reaction_axial = -total_axial
-    reaction_moment = -total_moment_about_support
+            moment -= (moment_udl - moment_inc)
+            theta += (theta_udl - theta_inc)
+            w += (w_udl - w_inc)
 
-    reactions = [
-        SupportReaction(
-            support_id=support.id,
-            support_type=support.type,
-            position=_format_float(support.position),
-            vertical=_format_float(reaction_vertical),
-            axial=_format_float(reaction_axial),
-            moment=_format_float(reaction_moment),
-        )
-    ]
-
-    return reactions
-
-
-def _cantilever_normal_diagram(payload: SolveRequest, x_axis: np.ndarray, reactions: List[SupportReaction]) -> np.ndarray:
-    """Build the axial force diagram for a cantilever."""
-    normal = np.zeros_like(x_axis, dtype=float)
-
-    for reaction in reactions:
-        normal += reaction.axial * (x_axis >= reaction.position)
-
-    for load in payload.point_loads:
-        axial = _axial_component(load)
-        normal -= axial * (x_axis >= load.position)
-
-    return normal
+    return moment, theta, w
 
 
-def _build_cantilever_axis(payload: SolveRequest, reactions: List[SupportReaction]) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Generate x, shear and moment arrays with refined sampling near jumps."""
+def build_refined_axis(payload: SolveRequest, supports_positions: List[float]) -> np.ndarray:
+    """Generate x values with extra samples around supports/loads."""
     base_axis = np.linspace(0.0, payload.length, num=DEFAULT_SAMPLING_POINTS, dtype=float, endpoint=True)
-    if base_axis.size > 0:
-        base_axis[0] = 0.0
-        base_axis[-1] = payload.length
-
-    shear_base = _shear_diagram(payload, base_axis, reactions)
-    critical_points: List[float] = base_axis.tolist()
-
-    for support in payload.supports:
-        _add_unique_point(critical_points, support.position, payload.length)
-
+    critical_points = base_axis.tolist()
+    for pos in supports_positions:
+        _add_unique_point(critical_points, pos, payload.length)
     for load in payload.point_loads:
         _add_unique_point(critical_points, load.position, payload.length)
-
     for udl in payload.udls:
         _add_unique_point(critical_points, udl.start, payload.length)
         _add_unique_point(critical_points, udl.end, payload.length)
@@ -520,128 +396,558 @@ def _build_cantilever_axis(payload: SolveRequest, reactions: List[SupportReactio
         if span > 0:
             for fraction in (0.25, 0.5, 0.75):
                 _add_unique_point(critical_points, udl.start + fraction * span, payload.length)
+    for m in payload.moment_loads:
+        _add_unique_point(critical_points, m.position, payload.length)
+    return np.array(sorted(list(set(critical_points))), dtype=float)
 
-    for moment_load in payload.moment_loads:
-        _add_unique_point(critical_points, moment_load.position, payload.length)
 
-    for idx in range(len(base_axis) - 1):
-        left = base_axis[idx]
-        right = base_axis[idx + 1]
-        s_left = shear_base[idx]
-        s_right = shear_base[idx + 1]
+def evaluate_diagrams(
+    x_axis: np.ndarray,
+    payload: SolveRequest,
+    reactions: List[SupportReaction],
+    C1: float,
+    C2: float,
+    EI: float,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Compute V(x), M(x), N(x), theta(x), and w(x) arrays."""
+    shear = np.zeros_like(x_axis, dtype=float)
+    moment = np.zeros_like(x_axis, dtype=float)
+    normal = np.zeros_like(x_axis, dtype=float)
+    theta_ei = np.zeros_like(x_axis, dtype=float)
+    w_ei = np.zeros_like(x_axis, dtype=float)
 
-        if abs(s_left) < ROOT_TOL:
-            _add_unique_point(critical_points, left, payload.length)
-        if abs(s_right) < ROOT_TOL:
-            _add_unique_point(critical_points, right, payload.length)
+    # 1. Reactions
+    for r in reactions:
+        pos = r.position
+        shear += r.vertical * macaulay(x_axis, pos, 0)
+        moment += r.vertical * macaulay(x_axis, pos, 1)
+        normal += r.axial * macaulay(x_axis, pos, 0)
+        theta_ei -= (r.vertical / 2.0) * macaulay(x_axis, pos, 2)
+        w_ei -= (r.vertical / 6.0) * macaulay(x_axis, pos, 3)
 
-        if s_left * s_right < 0.0:
-            root = _locate_shear_zero(payload, reactions, left, right, s_left, s_right)
-            _add_unique_point(critical_points, root, payload.length)
-        else:
-            mid = 0.5 * (left + right)
-            s_mid = float(_shear_diagram(payload, np.array([mid], dtype=float), reactions)[0])
-            if s_left * s_mid < 0.0:
-                root = _locate_shear_zero(payload, reactions, left, mid, s_left, s_mid)
-                _add_unique_point(critical_points, root, payload.length)
-            elif s_mid * s_right < 0.0:
-                root = _locate_shear_zero(payload, reactions, mid, right, s_mid, s_right)
-                _add_unique_point(critical_points, root, payload.length)
+        if r.support_type == "fixed":
+            moment += r.moment * macaulay(x_axis, pos, 0)
+            theta_ei -= r.moment * macaulay(x_axis, pos, 1)
+            w_ei -= (r.moment / 2.0) * macaulay(x_axis, pos, 2)
 
-    x_axis = np.array(sorted(critical_points), dtype=float)
-
-    shear = _shear_diagram(payload, x_axis, reactions)
-    normal = _cantilever_normal_diagram(payload, x_axis, reactions)
-    moment = _moment_diagram(payload, x_axis, reactions)
-
-    discontinuity_positions: List[float] = []
-    for reaction in reactions:
-        if abs(reaction.vertical) > ROOT_TOL:
-            discontinuity_positions.append(reaction.position)
+    # 2. Applied Point Loads
     for load in payload.point_loads:
-        vertical = _vertical_component(load)
-        if abs(vertical) > ROOT_TOL:
+        p_val = _vertical_component(load)
+        axial = _axial_component(load)
+        pos = load.position
+        shear -= p_val * macaulay(x_axis, pos, 0)
+        moment -= p_val * macaulay(x_axis, pos, 1)
+        normal += axial * macaulay(x_axis, pos, 0)
+        theta_ei += (p_val / 2.0) * macaulay(x_axis, pos, 2)
+        w_ei += (p_val / 6.0) * macaulay(x_axis, pos, 3)
+
+    # 3. Applied Moments
+    for m in payload.moment_loads:
+        signed_t = m.magnitude * _moment_sign(m.direction)
+        pos = m.position
+        moment += signed_t * macaulay(x_axis, pos, 0)
+        theta_ei -= signed_t * macaulay(x_axis, pos, 1)
+        w_ei -= (signed_t / 2.0) * macaulay(x_axis, pos, 2)
+
+    # 4. Applied UDLs
+    for udl in payload.udls:
+        q = udl.magnitude * _udl_sign(udl)
+        a, b = udl.start, udl.end
+        L_u = b - a
+        if L_u <= 0:
+            continue
+        if udl.shape == "uniform":
+            shear -= q * (macaulay(x_axis, a, 1) - macaulay(x_axis, b, 1))
+            moment -= (q / 2.0) * (macaulay(x_axis, a, 2) - macaulay(x_axis, b, 2))
+            theta_ei += (q / 6.0) * (macaulay(x_axis, a, 3) - macaulay(x_axis, b, 3))
+            w_ei += (q / 24.0) * (macaulay(x_axis, a, 4) - macaulay(x_axis, b, 4))
+        elif udl.shape == "triangular_increasing":
+            shear -= (q / (2.0 * L_u)) * (macaulay(x_axis, a, 2) - macaulay(x_axis, b, 2)) + q * macaulay(x_axis, b, 1)
+            moment -= (q / (6.0 * L_u)) * (macaulay(x_axis, a, 3) - macaulay(x_axis, b, 3)) + (q / 2.0) * macaulay(x_axis, b, 2)
+            theta_ei += (q / (24.0 * L_u)) * (macaulay(x_axis, a, 4) - macaulay(x_axis, b, 4)) - (q / 6.0) * macaulay(x_axis, b, 3)
+            w_ei += (q / (120.0 * L_u)) * (macaulay(x_axis, a, 5) - macaulay(x_axis, b, 5)) - (q / 24.0) * macaulay(x_axis, b, 4)
+        elif udl.shape == "triangular_decreasing":
+            shear_udl = q * (macaulay(x_axis, a, 1) - macaulay(x_axis, b, 1))
+            shear_inc = (q / (2.0 * L_u)) * (macaulay(x_axis, a, 2) - macaulay(x_axis, b, 2)) + q * macaulay(x_axis, b, 1)
+            shear -= (shear_udl - shear_inc)
+
+            moment_udl = (q / 2.0) * (macaulay(x_axis, a, 2) - macaulay(x_axis, b, 2))
+            moment_inc = (q / (6.0 * L_u)) * (macaulay(x_axis, a, 3) - macaulay(x_axis, b, 3)) + (q / 2.0) * macaulay(x_axis, b, 2)
+            moment -= (moment_udl - moment_inc)
+
+            theta_udl = (q / 6.0) * (macaulay(x_axis, a, 3) - macaulay(x_axis, b, 3))
+            theta_inc = (q / (24.0 * L_u)) * (macaulay(x_axis, a, 4) - macaulay(x_axis, b, 4)) - (q / 6.0) * macaulay(x_axis, b, 3)
+            theta_ei += (theta_udl - theta_inc)
+
+            w_udl = (q / 24.0) * (macaulay(x_axis, a, 4) - macaulay(x_axis, b, 4))
+            w_inc = (q / (120.0 * L_u)) * (macaulay(x_axis, a, 5) - macaulay(x_axis, b, 5)) - (q / 24.0) * macaulay(x_axis, b, 4)
+            w_ei += (w_udl - w_inc)
+
+    theta = (theta_ei + C1) / EI
+    w = (w_ei + C1 * x_axis + C2) / EI
+    deflection_mm = w * 1000.0
+
+    return shear, moment, normal, theta, deflection_mm
+
+
+def generate_detailed_solution_steps(
+    payload: SolveRequest,
+    reactions: List[SupportReaction],
+    C1: float,
+    C2: float,
+    E: float,
+    I: float,
+    max_defl: float,
+    max_defl_pos: float,
+) -> DetailedSolution:
+    """Generate step by step explanations with LaTeX formulas in Turkish."""
+    reaction_steps = []
+
+    # Step 1: Serbest Cisim Diyagramı
+    explanation_1 = (
+        "Statik ve mukavemet analizinin ilk adımı, kiriş üzerindeki tüm aktif yükleri ve sınır koşullarını "
+        "içeren Serbest Cisim Diyagramını (SCD) tanımlamaktır. Bu aşamada dikey kuvvet dengesi (\\sum F_y = 0) "
+        "ve moment dengesi (\\sum M = 0) şartları tanımlanır."
+    )
+    reaction_steps.append(
+        SolutionStep(
+            step_number=1,
+            title="1. Serbest Cisim Diyagramı ve Denge Şartları",
+            explanation=explanation_1,
+            general_formula=r"\sum F_y = 0, \quad \sum M = 0",
+        )
+    )
+
+    # Step 2: Denge Denklemleri
+    explanation_2 = (
+        "Kirişe etkiyen dikey yüklerin ve reaksiyon kuvvetlerinin toplamını sıfıra eşitliyoruz. "
+        "Ayrıca dikey mesnet reaksiyon kuvvetleri dikey statik denge denklemleriyle formüle edilir."
+    )
+    vert_lhs = " + ".join([f"R_{{{r.support_id}}}" for r in reactions])
+    total_p = sum(_vertical_component(load) for load in payload.point_loads)
+    total_udl = 0.0
+    for udl in payload.udls:
+        span = udl.end - udl.start
+        q = udl.magnitude * _udl_sign(udl)
+        if udl.shape == "uniform":
+            total_udl += q * span
+        else:
+            total_udl += 0.5 * q * span
+    formula_2 = f"{vert_lhs} - ({total_p + total_udl:.2f}) = 0"
+    reaction_steps.append(
+        SolutionStep(
+            step_number=2,
+            title="2. Denge Denkleminin Kurulması",
+            explanation=explanation_2,
+            general_formula=r"\sum R_i - \sum P_{y,k} - \sum W_{udl,m} = 0",
+            substituted_formula=formula_2,
+        )
+    )
+
+    # Step 3: Çözüm
+    explanation_3 = (
+        "Macaulay sınır koşulları ile statik denge şartları birleştirilerek dikey mesnet tepki kuvvetleri "
+        "ve sabitleme momentleri kesin olarak elde edilir."
+    )
+    res_lines = []
+    for r in reactions:
+        res_lines.append(f"R_{{{r.support_id}}} = {r.vertical:.2f} \\text{{ kN}} \\quad (x = {r.position:.2f}\\text{{ m}})")
+        if r.support_type == "fixed":
+            res_lines.append(f"M_{{{r.support_id}}} = {r.moment:.2f} \\text{{ kNm}}")
+    reaction_steps.append(
+        SolutionStep(
+            step_number=3,
+            title="3. Reaksiyon Değerlerinin Hesaplanması",
+            explanation=explanation_3,
+            numerical_result=" \\\\ ".join(res_lines),
+        )
+    )
+
+    integration_steps = []
+
+    # Step 1: Moment Denklemi
+    explanation_int_1 = (
+        "Macaulay Yöntemi ile kiriş boyunca tek bir sürekli moment denklemi M(x) yazılır. "
+        "Macaulay parantezleri \\langle x - a \\rangle^n, x < a için sıfırdır, x \\ge a için normal parantez görevi görür."
+    )
+    m_terms = []
+    for r in reactions:
+        m_terms.append(f"{r.vertical:+.2f} \\langle x - {r.position:.2f} \\rangle^1")
+        if r.support_type == "fixed":
+            m_terms.append(f"{r.moment:+.2f} \\langle x - {r.position:.2f} \\rangle^0")
+    for load in payload.point_loads:
+        p_val = _vertical_component(load)
+        m_terms.append(f"{-p_val:+.2f} \\langle x - {load.position:.2f} \\rangle^1")
+    for ml in payload.moment_loads:
+        sig_t = ml.magnitude * _moment_sign(ml.direction)
+        m_terms.append(f"{sig_t:+.2f} \\langle x - {ml.position:.2f} \\rangle^0")
+    for udl in payload.udls:
+        q = udl.magnitude * _udl_sign(udl)
+        a, b = udl.start, udl.end
+        Lu = b - a
+        if udl.shape == "uniform":
+            m_terms.append(f"{-q/2.0:+.2f} \\langle x - {a:.2f} \\rangle^2 {+q/2.0:+.2f} \\langle x - {b:.2f} \\rangle^2")
+        elif udl.shape == "triangular_increasing":
+            m_terms.append(f"{-q/(6.0*Lu):+.4f} \\langle x - {a:.2f} \\rangle^3 {+q/(6.0*Lu):+.4f} \\langle x - {b:.2f} \\rangle^3 {-q/2.0:+.2f} \\langle x - {b:.2f} \\rangle^2")
+        elif udl.shape == "triangular_decreasing":
+            m_terms.append(f"{-q/2.0:+.2f} \\langle x - {a:.2f} \\rangle^2 {+q/2.0:+.2f} \\langle x - {b:.2f} \\rangle^2")
+            m_terms.append(f"{+q/(6.0*Lu):+.4f} \\langle x - {a:.2f} \\rangle^3 {-q/(6.0*Lu):+.4f} \\langle x - {b:.2f} \\rangle^3 {+q/2.0:+.2f} \\langle x - {b:.2f} \\rangle^2")
+    m_eq = " ".join(m_terms)
+
+    integration_steps.append(
+        SolutionStep(
+            step_number=1,
+            title="1. Macaulay Eğilme Momenti Fonksiyonu M(x)",
+            explanation=explanation_int_1,
+            general_formula=r"M(x) = \sum R_i \langle x - s_i \rangle^1 + \sum M_{R,j} \langle x - f_j \rangle^0 - \sum P_k \langle x - p_k \rangle^1 \dots",
+            substituted_formula=f"M(x) = {m_eq}",
+        )
+    )
+
+    # Step 2: Eğim Denklemi
+    explanation_int_2 = (
+        "Moment denkleminin integrali alınarak eğim (dönme) fonksiyonu EI*\\theta(x) elde edilir. "
+        "Burada C_1 entegrasyon sabitidir. Entegrasyon kuralı: \\int \\langle x - a \\rangle^n dx = \\frac{\\langle x - a \\rangle^{n+1}}{n+1}"
+    )
+    t_terms = []
+    for r in reactions:
+        t_terms.append(f"{-r.vertical/2.0:+.2f} \\langle x - {r.position:.2f} \\rangle^2")
+        if r.support_type == "fixed":
+            t_terms.append(f"{-r.moment:+.2f} \\langle x - {r.position:.2f} \\rangle^1")
+    for load in payload.point_loads:
+        p_val = _vertical_component(load)
+        t_terms.append(f"{p_val/2.0:+.2f} \\langle x - {load.position:.2f} \\rangle^2")
+    for ml in payload.moment_loads:
+        sig_t = ml.magnitude * _moment_sign(ml.direction)
+        t_terms.append(f"{-sig_t:+.2f} \\langle x - {ml.position:.2f} \\rangle^1")
+    for udl in payload.udls:
+        q = udl.magnitude * _udl_sign(udl)
+        a, b = udl.start, udl.end
+        Lu = b - a
+        if udl.shape == "uniform":
+            t_terms.append(f"{q/6.0:+.2f} \\langle x - {a:.2f} \\rangle^3 {-q/6.0:+.2f} \\langle x - {b:.2f} \\rangle^3")
+        elif udl.shape == "triangular_increasing":
+            t_terms.append(f"{q/(24.0*Lu):+.4f} \\langle x - {a:.2f} \\rangle^4 {-q/(24.0*Lu):+.4f} \\langle x - {b:.2f} \\rangle^4 {-q/6.0:+.2f} \\langle x - {b:.2f} \\rangle^3")
+        elif udl.shape == "triangular_decreasing":
+            t_terms.append(f"{q/6.0:+.2f} \\langle x - {a:.2f} \\rangle^3 {-q/6.0:+.2f} \\langle x - {b:.2f} \\rangle^3")
+            t_terms.append(f"{-q/(24.0*Lu):+.4f} \\langle x - {a:.2f} \\rangle^4 {q/(24.0*Lu):+.4f} \\langle x - {b:.2f} \\rangle^4 {q/6.0:+.2f} \\langle x - {b:.2f} \\rangle^3")
+    t_eq = " ".join(t_terms) + " + C_1"
+
+    integration_steps.append(
+        SolutionStep(
+            step_number=2,
+            title="2. Eğim (Dönme) Denklemi EI*\\theta(x)",
+            explanation=explanation_int_2,
+            general_formula=r"EI \theta(x) = -\int M(x) dx + C_1",
+            substituted_formula=f"EI \\theta(x) = {t_eq}",
+        )
+    )
+
+    # Step 3: Sehim Denklemi
+    explanation_int_3 = (
+        "Eğim denkleminin tekrar x koordinatına göre integrali alınarak sehim (çökme) fonksiyonu EI*w(x) elde edilir. "
+        "C_2 ikinci integrasyon sabitidir. Aşağı yönlü çökme pozitif kabul edilmiştir."
+    )
+    w_terms = []
+    for r in reactions:
+        w_terms.append(f"{-r.vertical/6.0:+.2f} \\langle x - {r.position:.2f} \\rangle^3")
+        if r.support_type == "fixed":
+            w_terms.append(f"{-r.moment/2.0:+.2f} \\langle x - {r.position:.2f} \\rangle^2")
+    for load in payload.point_loads:
+        p_val = _vertical_component(load)
+        w_terms.append(f"{p_val/6.0:+.2f} \\langle x - {load.position:.2f} \\rangle^3")
+    for ml in payload.moment_loads:
+        sig_t = ml.magnitude * _moment_sign(ml.direction)
+        w_terms.append(f"{-sig_t/2.0:+.2f} \\langle x - {ml.position:.2f} \\rangle^2")
+    for udl in payload.udls:
+        q = udl.magnitude * _udl_sign(udl)
+        a, b = udl.start, udl.end
+        Lu = b - a
+        if udl.shape == "uniform":
+            w_terms.append(f"{q/24.0:+.2f} \\langle x - {a:.2f} \\rangle^4 {-q/24.0:+.2f} \\langle x - {b:.2f} \\rangle^4")
+        elif udl.shape == "triangular_increasing":
+            w_terms.append(f"{q/(120.0*Lu):+.4f} \\langle x - {a:.2f} \\rangle^5 {-q/(120.0*Lu):+.4f} \\langle x - {b:.2f} \\rangle^5 {-q/24.0:+.2f} \\langle x - {b:.2f} \\rangle^4")
+        elif udl.shape == "triangular_decreasing":
+            w_terms.append(f"{q/24.0:+.2f} \\langle x - {a:.2f} \\rangle^4 {-q/24.0:+.2f} \\langle x - {b:.2f} \\rangle^4")
+            w_terms.append(f"{-q/(120.0*Lu):+.4f} \\langle x - {a:.2f} \\rangle^5 {q/(120.0*Lu):+.4f} \\langle x - {b:.2f} \\rangle^5 {q/24.0:+.2f} \\langle x - {b:.2f} \\rangle^4")
+    w_eq = " ".join(w_terms) + " + C_1 x + C_2"
+
+    integration_steps.append(
+        SolutionStep(
+            step_number=3,
+            title="3. Sehim (Çökme) Denklemi EI*w(x)",
+            explanation=explanation_int_3,
+            general_formula=r"EI w(x) = \iint -M(x) dx^2 + C_1 x + C_2",
+            substituted_formula=f"EI w(x) = {w_eq}",
+        )
+    )
+
+    # Step 4: Sınır Koşulları
+    explanation_int_4 = (
+        "Mesnetlerin olduğu konumlarda dikey çökme sıfırdır (w(s_i) = 0). Ankastre mesnetin olduğu "
+        "konumda ise hem dönme hem çökme sıfırdır (\\theta(f_j) = 0, w(f_j) = 0). "
+        "Bu sınır şartları uygulanarak bilinmeyen C_1 ve C_2 entegrasyon sabitleri çözülür."
+    )
+    integration_steps.append(
+        SolutionStep(
+            step_number=4,
+            title="4. Sınır Koşulları ve Entegrasyon Sabitlerinin Çözümü",
+            explanation=explanation_int_4,
+            general_formula=r"w(s_i) = 0 \implies C_1, C_2 \\ \theta(f_j) = 0 \implies C_1, C_2",
+            numerical_result=f"C_1 = {C1:.2f} \\text{{ kN}}\\cdot\\text{{m}}^2 \\quad C_2 = {C2:.2f} \\text{{ kN}}\\cdot\\text{{m}}^3",
+        )
+    )
+
+    # Step 5: Sehim Sonuç
+    explanation_int_5 = (
+        f"Kirişin elastik rijitlik değerleri E = {E:.2f} GPa ve I = {I*1e8:.2f} cm^4 "
+        f"olduğundan eğilme rijitliği EI = {E*1e6*I:.2f} kN.m^2 olmaktadır. "
+        f"Bu değer kullanılarak kirişin maksimum çökme miktarı ve bu çökmenin oluştuğu yer hesaplanmıştır."
+    )
+    integration_steps.append(
+        SolutionStep(
+            step_number=5,
+            title="5. Maksimum Çökme (Sehim) Sonucu",
+            explanation=explanation_int_5,
+            general_formula=r"w_{max} = \max|w(x)|",
+            numerical_result=f"w_{{max}} = {max_defl:.3f} \\text{{ mm}} \\quad (x = {max_defl_pos:.2f} \\text{{ m}})",
+        )
+    )
+
+    return DetailedSolution(
+        methods=[
+            SolutionMethod(
+                method_name="support_reactions",
+                method_title="1. Mesnet Tepkileri",
+                description="Kirişin dengesini sağlayan reaksiyon dikey kuvvetleri ve momentlerinin hesabı.",
+                recommended=True,
+                steps=reaction_steps,
+            ),
+            SolutionMethod(
+                method_name="integration_method",
+                method_title="2. İntegrasyon Yöntemi",
+                description="Macaulay tekillik fonksiyonları ile çökme ve dönme eğrisinin analitik hesabı.",
+                recommended=True,
+                recommendation_reason="Kiriş boyunca çökme (sehim) ve dönme değerlerini tam formülleştirerek verir.",
+                steps=integration_steps,
+            ),
+        ]
+    )
+
+
+def solve_beam_unified(payload: SolveRequest) -> SolveResponse:
+    """Unified solver using Macaulay singularity functions to solve determinate and indeterminate beams."""
+    start_time = perf_counter()
+    supports = sorted(payload.supports, key=lambda s: s.position)
+    N_s = len(supports)
+    fixed_indices = [i for i, s in enumerate(supports) if s.type == "fixed"]
+    N_f = len(fixed_indices)
+
+    M = N_s + N_f + 2
+
+    A = np.zeros((M, M), dtype=float)
+    B = np.zeros(M, dtype=float)
+
+    # Row 0: Vertical Equilibrium sum(R_i) = Total Downward applied loads
+    for i in range(N_s):
+        A[0, i] = 1.0
+
+    total_p = sum(_vertical_component(load) for load in payload.point_loads)
+    total_udl = 0.0
+    for udl in payload.udls:
+        q = udl.magnitude * _udl_sign(udl)
+        span = udl.end - udl.start
+        if span <= 0:
+            continue
+        if udl.shape == "uniform":
+            total_udl += q * span
+        else:  # triangular
+            total_udl += 0.5 * q * span
+    B[0] = total_p + total_udl
+
+    # Row 1: Moment Equilibrium about x=0
+    for i in range(N_s):
+        A[1, i] = supports[i].position
+    for j in range(N_f):
+        A[1, N_s + j] = -1.0
+
+    moment_p = sum(_vertical_component(load) * load.position for load in payload.point_loads)
+    moment_udl = 0.0
+    for udl in payload.udls:
+        q = udl.magnitude * _udl_sign(udl)
+        span = udl.end - udl.start
+        if span <= 0:
+            continue
+        if udl.shape == "uniform":
+            centroid = udl.start + span / 2.0
+            moment_udl += q * span * centroid
+        elif udl.shape == "triangular_increasing":
+            centroid = udl.start + 2.0 * span / 3.0
+            moment_udl += 0.5 * q * span * centroid
+        elif udl.shape == "triangular_decreasing":
+            centroid = udl.start + span / 3.0
+            moment_udl += 0.5 * q * span * centroid
+    moment_moments = sum(moment_load.magnitude * _moment_sign(moment_load.direction) for moment_load in payload.moment_loads)
+    B[1] = moment_p + moment_udl + moment_moments
+
+    # Rows 2 to 2 + N_s - 1: Deflection w(s_k) = 0
+    for k, support in enumerate(supports):
+        s_k = support.position
+        for i in range(N_s):
+            A[2 + k, i] = (1.0 / 6.0) * macaulay(np.array([s_k]), supports[i].position, 3)[0]
+        for j, idx in enumerate(fixed_indices):
+            A[2 + k, N_s + j] = (1.0 / 2.0) * macaulay(np.array([s_k]), supports[idx].position, 2)[0]
+        A[2 + k, N_s + N_f] = s_k
+        A[2 + k, N_s + N_f + 1] = 1.0
+        _, _, w_val = get_applied_loads_at_x(s_k, payload)
+        B[2 + k] = w_val
+
+    # Rows 2 + N_s to 2 + N_s + N_f - 1: Rotation theta(f_k) = 0
+    for j, idx in enumerate(fixed_indices):
+        f_j = supports[idx].position
+        for i in range(N_s):
+            A[2 + N_s + j, i] = (1.0 / 2.0) * macaulay(np.array([f_j]), supports[i].position, 2)[0]
+        for j_prime, idx_prime in enumerate(fixed_indices):
+            A[2 + N_s + j, N_s + j_prime] = macaulay(np.array([f_j]), supports[idx_prime].position, 1)[0]
+        A[2 + N_s + j, N_s + N_f] = 1.0
+        _, theta_val, _ = get_applied_loads_at_x(f_j, payload)
+        B[2 + N_s + j] = theta_val
+
+    # Solve linear system
+    try:
+        X = np.linalg.solve(A, B)
+    except np.linalg.LinAlgError:
+        raise ValueError("Kiriş dengesiz veya tanımsız mesnet yerleşimi mevcut.")
+
+    reactions_vertical = X[0:N_s]
+    reactions_moment = X[N_s : N_s + N_f]
+    C1 = X[N_s + N_f]
+    C2 = X[N_s + N_f + 1]
+
+    # Construct resolved reactions
+    resolved_reactions = []
+    fixed_count = 0
+    for i, support in enumerate(supports):
+        vert = reactions_vertical[i]
+        moment_val = 0.0
+        if support.type == "fixed":
+            moment_val = reactions_moment[fixed_count]
+            fixed_count += 1
+        resolved_reactions.append(
+            SupportReaction(
+                support_id=support.id,
+                support_type=support.type,
+                position=_format_float(support.position),
+                vertical=_format_float(vert),
+                axial=0.0,
+                moment=_format_float(moment_val),
+            )
+        )
+
+    # Axial reactions
+    total_axial_load = sum(_axial_component(load) for load in payload.point_loads)
+    axial_support_index = None
+    for i, support in enumerate(supports):
+        if support.type in ("pin", "fixed"):
+            axial_support_index = i
+            break
+
+    for i, reaction in enumerate(resolved_reactions):
+        if i == axial_support_index:
+            reaction.axial = _format_float(-total_axial_load)
+        else:
+            reaction.axial = 0.0
+
+    E = payload.elastic_modulus_gpa
+    I = payload.moment_inertia_m4
+    EI = E * 1e6 * I
+
+    # Build refined axis
+    supports_positions = [s.position for s in supports]
+    x_axis = build_refined_axis(payload, supports_positions)
+
+    discontinuity_positions = []
+    for r in resolved_reactions:
+        if abs(r.vertical) > ROOT_TOL:
+            discontinuity_positions.append(r.position)
+    for load in payload.point_loads:
+        p_val = _vertical_component(load)
+        if abs(p_val) > ROOT_TOL:
             discontinuity_positions.append(load.position)
+    for m in payload.moment_loads:
+        discontinuity_positions.append(m.position)
 
     if discontinuity_positions:
-        x_axis_refined: List[float] = []
-        shear_refined: List[float] = []
-        normal_refined: List[float] = []
-        moment_refined: List[float] = []
-
-        for idx, x_val in enumerate(x_axis):
+        x_axis_refined = []
+        for x_val in x_axis:
             is_jump = any(math.isclose(x_val, pos, abs_tol=ROOT_TOL, rel_tol=0.0) for pos in discontinuity_positions)
-            if is_jump:
+            if is_jump and x_val > 0.0:
                 left_eval = float(np.nextafter(x_val, -np.inf))
-                shear_left = float(_shear_diagram(payload, np.array([left_eval], dtype=float), reactions)[0])
-                normal_left = float(_cantilever_normal_diagram(payload, np.array([left_eval], dtype=float), reactions)[0])
-                moment_left = float(_moment_diagram(payload, np.array([left_eval], dtype=float), reactions)[0])
-                x_axis_refined.append(float(x_val))
-                shear_refined.append(shear_left)
-                normal_refined.append(normal_left)
-                moment_refined.append(moment_left)
-
+                x_axis_refined.append(left_eval)
             x_axis_refined.append(float(x_val))
-            shear_refined.append(float(shear[idx]))
-            normal_refined.append(float(normal[idx]))
-            moment_refined.append(float(moment[idx]))
+        x_axis = np.array(sorted(list(set(x_axis_refined))), dtype=float)
 
-        x_axis = np.array(x_axis_refined, dtype=float)
-        shear = np.array(shear_refined, dtype=float)
-        normal = np.array(normal_refined, dtype=float)
-        moment = np.array(moment_refined, dtype=float)
+    # Evaluate diagrams
+    shear, moment, normal, theta, deflection_mm = evaluate_diagrams(x_axis, payload, resolved_reactions, C1, C2, EI)
 
-    return x_axis, shear, moment
-
-
-def solve_cantilever_beam(payload: SolveRequest) -> SolveResponse:
-    """Entry point that solves cantilever reactions and diagrams only."""
-    start_time = perf_counter()
-    reactions = _compute_cantilever_reactions(payload)
-    recommendation = _determine_method_recommendation(payload)
-
-    x_axis, shear, moment = _build_cantilever_axis(payload, reactions)
-    moment_extrema = _compute_moment_extrema(payload, reactions, x_axis, shear)
-
-    warnings: List[str] = []
+    # Extremums
+    moment_extrema = _compute_moment_extrema(payload, resolved_reactions, x_axis, shear)
     max_positive = moment_extrema.get("max_positive")
     min_negative = moment_extrema.get("min_negative")
     max_absolute = moment_extrema.get("max_absolute")
 
+    max_deflection_val = float(np.max(np.abs(deflection_mm)))
+    max_deflection_idx = np.argmax(np.abs(deflection_mm))
+    max_deflection_pos = float(x_axis[max_deflection_idx])
+
     duration_ms = (perf_counter() - start_time) * 1000.0
 
     diagram_data = DiagramData(
-        x=[_format_float(value) for value in x_axis.tolist()],
-        shear=[_format_float(value) for value in shear.tolist()],
-        moment=[_format_float(value) for value in moment.tolist()],
-        normal=[0.0 for _ in x_axis.tolist()],
+        x=[_format_float(v) for v in x_axis],
+        shear=[_format_float(v) for v in shear],
+        moment=[_format_float(v) for v in moment],
+        normal=[_format_float(v) for v in normal],
+        deflection=[_format_float(v) for v in deflection_mm],
+        rotation=[_format_float(v) for v in theta],
+    )
+
+    detailed_sol = generate_detailed_solution_steps(
+        payload, resolved_reactions, C1, C2, E, I, max_deflection_val, max_deflection_pos
     )
 
     return SolveResponse(
-        reactions=[
-            SupportReaction(
-                support_id=reaction.support_id,
-                support_type=reaction.support_type,
-                position=_format_float(reaction.position),
-                vertical=_format_float(reaction.vertical),
-                axial=_format_float(reaction.axial),
-                moment=_format_float(reaction.moment),
-            )
-            for reaction in reactions
-        ],
+        reactions=resolved_reactions,
         diagram=diagram_data,
         meta=SolveMeta(
             solve_time_ms=_format_float(duration_ms),
-            validation_warnings=warnings,
-            recommendation=recommendation,
+            validation_warnings=[],
+            recommendation=MethodRecommendation(
+                method="area",
+                title="Alan Yontemi",
+                reason="Standart cozum yontemi."
+            ),
             max_positive_moment=_format_float(max_positive[1]) if max_positive else None,
             max_positive_position=_format_float(max_positive[0]) if max_positive else None,
             min_negative_moment=_format_float(min_negative[1]) if min_negative else None,
             min_negative_position=_format_float(min_negative[0]) if min_negative else None,
             max_absolute_moment=_format_float(max_absolute[1]) if max_absolute else None,
             max_absolute_position=_format_float(max_absolute[0]) if max_absolute else None,
+            max_deflection=_format_float(max_deflection_val),
+            max_deflection_position=_format_float(max_deflection_pos),
         ),
+        detailed_solution=detailed_sol,
     )
+
+
+def solve_beam(payload: SolveRequest) -> SolveResponse:
+    """Solve beam using unified Macaulay solver."""
+    return solve_beam_unified(payload)
+
+
+def solve_cantilever_beam(payload: SolveRequest) -> SolveResponse:
+    """Solve cantilever beam using unified Macaulay solver."""
+    return solve_beam_unified(payload)
+
 
 
 def calculate_fundamental_period(payload: ChimneyPeriodRequest) -> ChimneyPeriodResponse:

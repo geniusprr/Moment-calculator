@@ -40,6 +40,8 @@ export interface BeamSolveRequest {
   point_loads: Array<{ id: string; magnitude: number; position: number; angle_deg: number }>;
   udls: Array<{ id: string; magnitude: number; start: number; end: number; direction: Direction; shape: UdlShape }>;
   moment_loads: Array<{ id: string; magnitude: number; position: number; direction: MomentDirection }>;
+  elastic_modulus_gpa?: number;
+  moment_inertia_m4?: number;
 }
 
 export interface SupportReaction {
@@ -59,7 +61,7 @@ export interface LoadColorConfig {
 }
 
 export interface MethodRecommendation {
-  method: "shear" | "area";
+  method: "shear" | "area" | "integration";
   title: string;
   reason: string;
 }
@@ -144,6 +146,8 @@ export interface BeamSolveResponse {
     shear: number[];
     moment: number[];
     normal: number[];
+    deflection?: number[];
+    rotation?: number[];
   };
   meta: {
     solve_time_ms: number;
@@ -155,5 +159,8 @@ export interface BeamSolveResponse {
     min_negative_position?: number;
     max_absolute_moment?: number;
     max_absolute_position?: number;
+    max_deflection?: number;
+    max_deflection_position?: number;
   };
+  detailed_solution?: DetailedSolution;
 }

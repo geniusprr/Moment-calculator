@@ -47,6 +47,8 @@ class SolveRequest(BaseModel):
     udls: List[UniformDistributedLoad] = Field(default_factory=list)
     moment_loads: List[MomentLoad] = Field(default_factory=list)
     beam_type: BeamType = Field(default="simply_supported", description="Beam boundary condition configuration")
+    elastic_modulus_gpa: float = Field(default=200.0, description="Elastisite modulu (GPa)")
+    moment_inertia_m4: float = Field(default=1e-4, description="Kesit atalet momenti (m^4)")
 
     @model_validator(mode="after")
     def validate_domain(self, info: ValidationInfo) -> "SolveRequest":
@@ -58,24 +60,33 @@ class SolveRequest(BaseModel):
                 raise ValueError("Basit kiris icin tam olarak iki mesnet tanimlanmalidir.")
 
             positions = sorted(support.position for support in self.supports)
-            if positions[0] < 0 or positions[1] > length:
+            if positions[0] < 0 or positions[-1] > length:
                 raise ValueError("Mesnet konumlari kiris boyu icinde olmalidir.")
-            if abs(positions[0] - positions[1]) < 1e-6:
-                raise ValueError("Mesnet konumlari ayri olmalidir.")
+            
+            # Check for duplicates
+            for i in range(len(positions) - 1):
+                if abs(positions[i] - positions[i+1]) < 1e-6:
+                    raise ValueError("Mesnet konumlari birbirinden farkli olmalidir.")
 
             invalid_fixed = [support for support in self.supports if support.type == "fixed"]
             if invalid_fixed:
                 raise ValueError("Basit kiris seceneginde ankastre (fixed) mesnet kullanilamaz.")
         else:
-            if len(self.supports) != 1:
-                raise ValueError("Konsol kiris icin tek bir ankastre mesnet gereklidir.")
+            if len(self.supports) < 1:
+                raise ValueError("Konsol kiris icin en az bir adet ankastre mesnet gereklidir.")
 
-            only_support = self.supports[0]
-            if only_support.type != "fixed":
-                raise ValueError("Konsol kiris icin mesnet tipi fixed olmalidir.")
+            fixed_supports = [support for support in self.supports if support.type == "fixed"]
+            if not fixed_supports:
+                raise ValueError("Konsol kiris icin en az bir adet ankastre (fixed) mesnet gereklidir.")
 
-            if not (abs(only_support.position) < 1e-9 or abs(only_support.position - length) < 1e-9):
-                raise ValueError("Konsol mesneti kirisin baslangicinda veya ucunda olmalidir (x=0 veya x=L).")
+            has_fixed_at_end = any(abs(support.position) < 1e-9 or abs(support.position - length) < 1e-9 for support in fixed_supports)
+            if not has_fixed_at_end:
+                raise ValueError("En az bir ankastre mesnet kirisin baslangicinda veya ucunda olmalidir (x=0 veya x=L).")
+
+            positions = sorted(support.position for support in self.supports)
+            for i in range(len(positions) - 1):
+                if abs(positions[i] - positions[i+1]) < 1e-6:
+                    raise ValueError("Mesnet konumlari birbirinden farkli olmalidir.")
 
         for load in self.point_loads:
             if not 0 <= load.position <= length:
@@ -108,12 +119,52 @@ class DiagramData(BaseModel):
     shear: List[float]
     moment: List[float]
     normal: List[float]
+    deflection: Optional[List[float]] = None
+    rotation: Optional[List[float]] = None
 
 
 class MethodRecommendation(BaseModel):
     method: Literal["shear", "area"]
     title: str
     reason: str
+
+
+class BeamSectionHighlight(BaseModel):
+    start: float
+    end: float
+    label: Optional[str] = None
+
+
+class AreaMethodVisualization(BaseModel):
+    region: Optional[dict] = None
+    moment_segment: Optional[dict] = None
+    shape: Optional[str] = None
+    area_value: Optional[float] = None
+    trend: Optional[str] = None
+
+
+class SolutionStep(BaseModel):
+    step_number: int
+    title: str
+    explanation: str
+    general_formula: Optional[str] = None
+    substituted_formula: Optional[str] = None
+    numerical_result: Optional[str] = None
+    beam_section: Optional[BeamSectionHighlight] = None
+    area_visualization: Optional[AreaMethodVisualization] = None
+
+
+class SolutionMethod(BaseModel):
+    method_name: str
+    method_title: str
+    description: str
+    recommended: Optional[bool] = None
+    recommendation_reason: Optional[str] = None
+    steps: List[SolutionStep]
+
+
+class DetailedSolution(BaseModel):
+    methods: List[SolutionMethod]
 
 
 class SolveMeta(BaseModel):
@@ -126,12 +177,16 @@ class SolveMeta(BaseModel):
     min_negative_position: Optional[float] = None
     max_absolute_moment: Optional[float] = None
     max_absolute_position: Optional[float] = None
+    max_deflection: Optional[float] = None
+    max_deflection_position: Optional[float] = None
 
 
 class SolveResponse(BaseModel):
     reactions: List[SupportReaction]
     diagram: DiagramData
     meta: SolveMeta
+    detailed_solution: Optional[DetailedSolution] = None
+
 
 
 class ChimneyPeriodRequest(BaseModel):

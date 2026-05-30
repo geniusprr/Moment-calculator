@@ -28,8 +28,12 @@ interface BeamFormProps {
   onMomentChange: (id: string, field: keyof MomentLoadInput, value: string | number) => void;
   onAddMoment: () => void;
   onRemoveMoment: (id: string) => void;
+  elasticModulusGpa: number;
+  onElasticModulusGpaChange: (value: number) => void;
+  momentInertiaCm4: number;
+  onMomentInertiaCm4Change: (value: number) => void;
   onReset: () => void;
-  disableSolveReason?: string | null;
+  disableSolveReason: string | null;
 }
 
 const fieldClasses =
@@ -61,12 +65,16 @@ export function BeamForm({
   onRemoveMoment,
   onReset,
   disableSolveReason,
+  elasticModulusGpa,
+  onElasticModulusGpaChange,
+  momentInertiaCm4,
+  onMomentInertiaCm4Change,
 }: BeamFormProps) {
-  const maxSupports = beamType === "cantilever" ? 1 : 2;
+  const maxSupports = 4;
   const supportHint =
     beamType === "cantilever"
-      ? "Konsol çözüm için tek ankastre mesnet gerekir (x=0 veya x=L)."
-      : "Statik çözüm için tam olarak iki mesnet gereklidir.";
+      ? "Konsol çözümü için en az bir ankastre mesnet gerekir (x=0 veya x=L). Ek mesnet ekleyebilirsiniz."
+      : "Basit kiriş için en az iki mesnet gereklidir. Ek mesnet ekleyebilirsiniz.";
   return (
     <div className="panel space-y-6 p-6">
       <div className="flex items-center justify-between">
@@ -83,7 +91,7 @@ export function BeamForm({
         </button>
       </div>
 
-      <section className="grid gap-4 sm:grid-cols-2">
+      <section className="grid gap-4 sm:grid-cols-3">
         <label className="space-y-2">
           <span className={labelClass}>Kiriş uzunluğu (m)</span>
           <input
@@ -94,6 +102,30 @@ export function BeamForm({
             className={fieldClasses}
             value={length}
             onChange={(event) => onLengthChange(Number(event.target.value))}
+          />
+        </label>
+        <label className="space-y-2">
+          <span className={labelClass}>E - Elastisite Modülü (GPa)</span>
+          <input
+            type="number"
+            min={1}
+            max={1000}
+            step={1}
+            className={fieldClasses}
+            value={elasticModulusGpa}
+            onChange={(event) => onElasticModulusGpaChange(Number(event.target.value))}
+          />
+        </label>
+        <label className="space-y-2">
+          <span className={labelClass}>I - Atalet Momenti (cm⁴)</span>
+          <input
+            type="number"
+            min={1}
+            max={1000000}
+            step={10}
+            className={fieldClasses}
+            value={momentInertiaCm4}
+            onChange={(event) => onMomentInertiaCm4Change(Number(event.target.value))}
           />
         </label>
       </section>

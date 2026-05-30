@@ -8,6 +8,7 @@ import { ChangeEvent, useCallback, useEffect, useMemo, useState, useTransition }
 import { BeamDiagrams } from "@/components/BeamDiagrams";
 import { BeamForm } from "@/components/BeamForm";
 import { BeamSketch, SketchContextTarget } from "@/components/BeamSketch";
+import { DetailedSolutionPanel } from "@/components/DetailedSolutionPanel";
 import { solveBeam, solveChimneyPeriod } from "@/lib/api";
 import KtoLogo from "../../assets/KtoLOGO.png";
 import type {
@@ -141,6 +142,9 @@ export default function HomePage() {
   const [udls, setUdls] = useState<UdlInput[]>(cloneUdls(DEFAULT_PRESET.config.udls));
   const [momentLoads, setMomentLoads] = useState<MomentLoadInput[]>(cloneMoments(DEFAULT_PRESET.config.momentLoads));
   const [loadColors, setLoadColors] = useState<LoadColorConfig>(createDefaultLoadColors());
+  const [elasticModulusGpa, setElasticModulusGpa] = useState(200);
+  const [momentInertiaCm4, setMomentInertiaCm4] = useState(10000);
+  const [isSolutionOpen, setIsSolutionOpen] = useState(false);
   const [result, setResult] = useState<BeamSolveResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -256,15 +260,23 @@ export default function HomePage() {
       return null;
     }
 
-    if (sanitizedSupports.length !== 1) {
-      return "Konsol çözümü için tek bir ankastre mesnet gereklidir.";
+    if (sanitizedSupports.length < 1) {
+      return "Konsol çözümü için en az bir mesnet gereklidir.";
     }
-    const support = sanitizedSupports[0];
-    if (support.type !== "fixed") {
-      return "Konsol için mesnet tipi ankastre olmalıdır.";
+    const fixedSupports = sanitizedSupports.filter((s) => s.type === "fixed");
+    if (fixedSupports.length < 1) {
+      return "Konsol kiriş için en az bir ankastre mesnet gereklidir.";
     }
-    if (Math.min(Math.abs(support.position), Math.abs(length - support.position)) > 1e-3) {
+    const hasAtEnd = fixedSupports.some((s) => Math.abs(s.position) < 1e-3 || Math.abs(length - s.position) < 1e-3);
+    if (!hasAtEnd) {
       return "Ankastre mesnet x=0 veya x=L konumunda olmalıdır.";
+    }
+    for (let i = 0; i < sanitizedSupports.length; i++) {
+      for (let j = i + 1; j < sanitizedSupports.length; j++) {
+        if (Math.abs(sanitizedSupports[i].position - sanitizedSupports[j].position) < 1e-6) {
+          return "Mesnet konumları birbirinden farklı olmalıdır.";
+        }
+      }
     }
     return null;
   }, [beamType, length, sanitizedSupports]);
@@ -300,6 +312,8 @@ export default function HomePage() {
         position: moment.position,
         direction: moment.direction,
       })),
+      elastic_modulus_gpa: elasticModulusGpa,
+      moment_inertia_m4: momentInertiaCm4 * 1e-8,
     };
 
     startTransition(async () => {
@@ -312,7 +326,7 @@ export default function HomePage() {
         setError(err instanceof Error ? err.message : "Unexpected solver error.");
       }
     });
-  }, [beamType, disableSolveReason, length, sanitizedSupports, sanitizedPointLoads, sanitizedUdls, sanitizedMoments]);
+  }, [beamType, disableSolveReason, length, sanitizedSupports, sanitizedPointLoads, sanitizedUdls, sanitizedMoments, elasticModulusGpa, momentInertiaCm4]);
 
   const handleChimneySolve = useCallback(() => {
     const payload: ChimneyPeriodRequest = {
@@ -552,9 +566,15 @@ export default function HomePage() {
   const handleSupportPositionDrag = useCallback(
     (id: string, position: number) => {
       clearPresetSelection();
-      const snapped = beamType === "cantilever" ? (position < length / 2 ? 0 : length) : clampValue(position, 0, length);
       setSupports((current) =>
-        current.map((support) => (support.id === id ? { ...support, position: snapped, type: beamType === "cantilever" ? "fixed" : support.type } : support)),
+        current.map((support) => {
+          if (support.id !== id) return support;
+          let targetPos = clampValue(position, 0, length);
+          if (beamType === "cantilever" && support.type === "fixed") {
+            targetPos = targetPos < length / 2 ? 0 : length;
+          }
+          return { ...support, position: targetPos };
+        })
       );
     },
     [beamType, clearPresetSelection, length],
@@ -609,23 +629,39 @@ export default function HomePage() {
     (position?: number) => {
       clearPresetSelection();
       setSupports((current) => {
-        const maxSupports = beamType === "cantilever" ? 1 : 2;
+        const maxSupports = beamType === "cantilever" ? 4 : 2;
         if (current.length >= maxSupports) {
           return current;
         }
 
         if (beamType === "cantilever") {
-          const proposed = position !== undefined ? clampValue(position, 0, length) : 0;
-          const snapped = proposed < length / 2 ? 0 : length;
-          return [
-            {
-              id: "A",
-              type: "fixed",
-              position: snapped,
-            },
-          ];
+          if (current.length === 0) {
+            const proposed = position !== undefined ? clampValue(position, 0, length) : 0;
+            const snapped = proposed < length / 2 ? 0 : length;
+            return [
+              {
+                id: "A",
+                type: "fixed",
+                position: snapped,
+              },
+            ];
+          } else {
+            const nextPosition = position !== undefined ? clampValue(position, 0, length) : length / 2;
+            const usedIds = new Set(current.map((support) => support.id.toUpperCase()));
+            const preferredIds = ["A", "B", "C", "D"] as const;
+            const nextId = preferredIds.find((candidate) => !usedIds.has(candidate)) ?? createRandomId();
+            return [
+              ...current,
+              {
+                id: nextId,
+                type: "roller",
+                position: nextPosition,
+              },
+            ];
+          }
         }
 
+        // simply_supported
         const nextPosition = position !== undefined ? clampValue(position, 0, length) : current.length === 0 ? 0 : length;
         const type: SupportInput["type"] = current.length === 0 ? "pin" : "roller";
         const usedIds = new Set(current.map((support) => support.id.toUpperCase()));
@@ -844,7 +880,7 @@ export default function HomePage() {
     const { target } = contextMenu;
     switch (target.kind) {
       case "blank": {
-        const maxSupports = beamType === "cantilever" ? 1 : 2;
+        const maxSupports = beamType === "cantilever" ? 4 : 2;
         const canAddSupport = supports.length < maxSupports;
         return [
           {
@@ -1135,6 +1171,10 @@ export default function HomePage() {
                 onRemoveMoment={handleRemoveMoment}
                 onReset={handleReset}
                 disableSolveReason={disableSolveReason}
+                elasticModulusGpa={elasticModulusGpa}
+                onElasticModulusGpaChange={setElasticModulusGpa}
+                momentInertiaCm4={momentInertiaCm4}
+                onMomentInertiaCm4Change={setMomentInertiaCm4}
               />
               <section className="panel space-y-4 p-3 sm:p-4">
                 <div className="flex items-center justify-between">
@@ -1187,6 +1227,8 @@ export default function HomePage() {
                 shear={diagramData.shear}
                 moment={diagramData.moment}
                 normal={diagramData.normal}
+                deflection={result?.diagram.deflection}
+                rotation={result?.diagram.rotation}
                 loading={isPending}
                 shearMarkers={shearMarkers}
               />
@@ -1241,6 +1283,16 @@ export default function HomePage() {
                         </div>
                       )}
                     </div>
+                  )}
+
+                  {result?.detailed_solution && !error && (
+                    <button
+                      type="button"
+                      onClick={() => setIsSolutionOpen(true)}
+                      className="group relative w-full overflow-hidden rounded-full bg-gradient-to-r from-cyan-400 to-blue-500 py-2.5 text-sm font-semibold text-slate-950 transition hover:from-cyan-500 hover:to-blue-400 shadow-lg"
+                    >
+                      <span className="relative z-10">Detaylı Çözüm Adımlarını Göster</span>
+                    </button>
                   )}
 
                   {result?.meta.validation_warnings && result.meta.validation_warnings.length > 0 && (
@@ -1486,6 +1538,14 @@ export default function HomePage() {
             <div className="px-3 py-1.5 text-xs text-slate-500">No actions available</div>
           )}
         </div>
+      )}
+      {result?.detailed_solution && (
+        <DetailedSolutionPanel
+          detailedSolution={result.detailed_solution}
+          reactions={reactions}
+          isOpen={isSolutionOpen}
+          onClose={() => setIsSolutionOpen(false)}
+        />
       )}
 
     </main>
