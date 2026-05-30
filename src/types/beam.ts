@@ -64,6 +64,60 @@ export interface MethodRecommendation {
   reason: string;
 }
 
+export interface BeamContext {
+  length: number;
+  supports: SupportInput[];
+  point_loads: Array<{ id: string; magnitude: number; position: number; angle_deg: number }>;
+  udls: UdlInput[];
+  moment_loads: MomentLoadInput[];
+}
+
+export interface BeamSectionHighlight {
+  start: number;
+  end: number;
+  label?: string | null;
+}
+
+export interface AreaMethodVisualization {
+  region: {
+    x: number[];
+    shear: number[];
+  };
+  moment_segment: {
+    x: number[];
+    moment: number[];
+  };
+  shape: string;
+  area_value: number;
+  trend: "increase" | "decrease" | "constant";
+}
+
+export interface SolutionStep {
+  step_number: number;
+  title: string;
+  explanation: string;
+  general_formula?: string | null;
+  substituted_formula?: string | null;
+  numerical_result?: string | null;
+  beam_section?: BeamSectionHighlight | null;
+  area_visualization?: AreaMethodVisualization | null;
+}
+
+export interface SolutionMethod {
+  method_name: string;
+  method_title: string;
+  description: string;
+  recommended?: boolean;
+  recommendation_reason?: string | null;
+  steps: SolutionStep[];
+}
+
+export interface DetailedSolution {
+  methods: SolutionMethod[];
+  beam_context?: BeamContext | null;
+  diagram?: BeamSolveResponse["diagram"] | null;
+}
+
 // Chimney dynamic period
 export interface ChimneyPeriodRequest {
   height_m: number;
