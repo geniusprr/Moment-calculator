@@ -1,4 +1,4 @@
-import type { BeamSolveRequest, BeamSolveResponse, ChimneyPeriodRequest, ChimneyPeriodResponse } from "@/types/beam";
+import type { BeamSimulationResponse, BeamSolveRequest, BeamSolveResponse, ChimneyPeriodRequest, ChimneyPeriodResponse } from "@/types/beam";
 
 const baseUrl = (process.env.NEXT_PUBLIC_API_BASE_URL || "/api").replace(/\/$/, "");
 
@@ -22,3 +22,4 @@ async function post<T>(path: string, payload: unknown, signal?: AbortSignal): Pr
 
 export const solveBeam = (payload: BeamSolveRequest, signal?: AbortSignal) => post<BeamSolveResponse>("/solve", payload, signal);
 export const solveChimneyPeriod = (payload: ChimneyPeriodRequest) => post<ChimneyPeriodResponse>("/chimney/period", payload);
+export const simulateBeam = (payload: BeamSolveRequest & { mass_per_length_kgm: number; damping_ratio: number }, signal?: AbortSignal) => post<BeamSimulationResponse>("/simulate", payload, signal);

@@ -8,12 +8,12 @@ version = "0.1.0"
 description = "MVP backend for beam analysis solver"
 authors = [{ name = "Bitirme Projesi Team" }]
 dependencies = [
-    "fastapi>=0.111.0",
-    "uvicorn[standard]>=0.30.0",
-    "numpy>=1.26.0",
-    "pydantic>=2.7.0",
-    "sympy>=1.12",
-    "python-multipart>=0.0.9"
+    "fastapi==0.142.2",
+    "uvicorn[standard]==0.54.0",
+    "numpy==2.3.5",
+    "pydantic==2.13.5",
+    "sympy==1.14.0",
+    "python-multipart==0.0.32"
 ]
 requires-python = ">=3.11"
 

@@ -902,7 +902,7 @@ export function BeamSketch({
                   : applyAlpha(momentCwColor, 0.15),
               }}
             >
-              {moment.direction === "ccw" ? "↻" : "↺"}
+              {moment.direction === "ccw" ? "↺" : "↻"}
             </div>
           </div>
         ))}

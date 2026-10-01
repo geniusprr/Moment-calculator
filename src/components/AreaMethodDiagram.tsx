@@ -16,7 +16,7 @@ const trendLabels: Record<AreaMethodVisualization["trend"], string> = {
 };
 
 export function AreaMethodDiagram({ diagram, visualization }: AreaMethodDiagramProps) {
-    const { region, moment_segment, shape, area_value, trend } = visualization;
+    const { region, moment_segment, area_value, trend } = visualization;
 
     if (diagram.x.length === 0 || region.x.length === 0 || moment_segment.x.length === 0) {
         return null;

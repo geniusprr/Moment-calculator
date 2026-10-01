@@ -3,9 +3,10 @@
 import clsx from "clsx";
 import { motion } from "framer-motion";
 import Image from "next/image";
-import { ChangeEvent, useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 
 import { BeamDiagrams } from "@/components/BeamDiagrams";
+import { BeamSimulation } from "@/components/BeamSimulation";
 import { BeamForm } from "@/components/BeamForm";
 import { BeamSketch, SketchContextTarget } from "@/components/BeamSketch";
 import { DetailedSolutionPanel } from "@/components/DetailedSolutionPanel";
@@ -98,7 +99,7 @@ const PRESETS: PresetConfig[] = [
 
 const DEFAULT_PRESET = PRESETS[0];
 const BEAM_TYPES: Array<{ key: BeamType; label: string; hint: string }> = [
-  { key: "simply_supported", label: "Normal kiriş", hint: "2 mesnet" },
+  { key: "simply_supported", label: "Basit kiriş", hint: "2 mesnet" },
   { key: "cantilever", label: "Konsol kiriş", hint: "Ankastre" },
 ];
 
@@ -145,11 +146,12 @@ export default function HomePage() {
   const [elasticModulusGpa, setElasticModulusGpa] = useState(200);
   const [momentInertiaCm4, setMomentInertiaCm4] = useState(10000);
   const [isSolutionOpen, setIsSolutionOpen] = useState(false);
-  const [result, setResult] = useState<BeamSolveResponse | null>(null);
+  const [solveResult, setResult] = useState<BeamSolveResponse | null>(null);
+  const [solvedKey, setSolvedKey] = useState("");
+  const solveController = useRef<AbortController | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [activePreset, setActivePreset] = useState<string | null>(DEFAULT_PRESET.key);
-  const [pendingPresetKey, setPendingPresetKey] = useState<string | null>(DEFAULT_PRESET.key);
   const [contextMenu, setContextMenu] = useState<{ target: SketchContextTarget; clientX: number; clientY: number } | null>(
     null,
   );
@@ -164,7 +166,7 @@ export default function HomePage() {
   const [chimneyResult, setChimneyResult] = useState<ChimneyPeriodResponse | null>(null);
   const [chimneyError, setChimneyError] = useState<string | null>(null);
   const [isChimneyPending, startChimneyTransition] = useTransition();
-  const [view, setView] = useState<"onboarding" | "app">("onboarding");
+  const [view, setView] = useState<"onboarding" | "app">("app");
 
   useEffect(() => {
     setSupports((current) => current.map((support) => ({ ...support, position: clampValue(support.position, 0, length) })));
@@ -250,12 +252,14 @@ export default function HomePage() {
   );
 
   const disableSolveReason = useMemo(() => {
+    if (!Number.isFinite(length) || length <= 0.5 || length > 30) return "Kiriş uzunluğu 0.5 m’den büyük ve en fazla 30 m olmalıdır.";
+    if (!Number.isFinite(elasticModulusGpa) || elasticModulusGpa <= 0 || !Number.isFinite(momentInertiaCm4) || momentInertiaCm4 <= 0) return "Sehim hesabı için E ve I sıfırdan büyük olmalıdır.";
     if (beamType === "simply_supported") {
       if (sanitizedSupports.length !== 2) {
         return "Statik çözüm için tam olarak iki mesnet gerekir.";
       }
       if (Math.abs(sanitizedSupports[0].position - sanitizedSupports[1].position) < 1e-6) {
-        return "Support positions must be distinct.";
+        return "Mesnet konumları birbirinden farklı olmalıdır.";
       }
       return null;
     }
@@ -279,16 +283,9 @@ export default function HomePage() {
       }
     }
     return null;
-  }, [beamType, length, sanitizedSupports]);
+  }, [beamType, length, sanitizedSupports, elasticModulusGpa, momentInertiaCm4]);
 
-  const runSolve = useCallback(() => {
-    if (disableSolveReason) {
-      setResult(null);
-      setError(disableSolveReason);
-      return;
-    }
-
-    const payload: BeamSolveRequest = {
+  const solvePayload = useMemo<BeamSolveRequest>(() => ({
       length,
       beam_type: beamType,
       supports: sanitizedSupports.map((support) => ({ id: support.id, type: support.type, position: support.position })),
@@ -314,19 +311,31 @@ export default function HomePage() {
       })),
       elastic_modulus_gpa: elasticModulusGpa,
       moment_inertia_m4: momentInertiaCm4 * 1e-8,
-    };
+  }), [length, beamType, sanitizedSupports, sanitizedPointLoads, sanitizedUdls, sanitizedMoments, elasticModulusGpa, momentInertiaCm4]);
+  const currentKey = JSON.stringify(solvePayload);
+  const result = solvedKey === currentKey ? solveResult : null;
 
+  const runSolve = useCallback(() => {
+    solveController.current?.abort();
+    const controller = new AbortController();
+    solveController.current = controller;
+    if (disableSolveReason) {
+      setResult(null); setError(disableSolveReason); return;
+    }
     startTransition(async () => {
       try {
         setError(null);
-        const response = await solveBeam(payload);
-        setResult(response);
+        const response = await solveBeam(solvePayload, controller.signal);
+        if (!controller.signal.aborted) {
+          setSolvedKey(JSON.stringify(solvePayload)); setResult(response);
+        }
       } catch (err) {
-        setResult(null);
-        setError(err instanceof Error ? err.message : "Unexpected solver error.");
+        if (!controller.signal.aborted) {
+          setResult(null); setError(err instanceof Error ? err.message : "Hesaplama tamamlanamadı.");
+        }
       }
     });
-  }, [beamType, disableSolveReason, length, sanitizedSupports, sanitizedPointLoads, sanitizedUdls, sanitizedMoments, elasticModulusGpa, momentInertiaCm4]);
+  }, [solvePayload, disableSolveReason]);
 
   const handleChimneySolve = useCallback(() => {
     const payload: ChimneyPeriodRequest = {
@@ -350,15 +359,14 @@ export default function HomePage() {
   }, [chimneyInput]);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      runSolve();
-    }, 600);
-    return () => clearTimeout(timer);
+    solveController.current?.abort();
+    setError(null);
+    const timer = setTimeout(runSolve, 400);
+    return () => { clearTimeout(timer); solveController.current?.abort(); };
   }, [runSolve]);
 
   const clearPresetSelection = useCallback(() => {
     setActivePreset(null);
-    setPendingPresetKey(null);
   }, []);
 
   const applyPreset = useCallback((preset: PresetConfig) => {
@@ -372,7 +380,6 @@ export default function HomePage() {
     setResult(null);
     setError(null);
     setActivePreset(preset.key);
-    setPendingPresetKey(preset.key);
   }, []);
 
   const handlePresetChange = useCallback(
@@ -998,7 +1005,7 @@ export default function HomePage() {
     >
       {/* Header */}
       <header className="sticky top-0 z-40 border-b border-slate-800/50 bg-slate-900/80 backdrop-blur-xl">
-        <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-4 py-3 sm:px-6">
+        <div className="mx-auto flex w-full max-w-[1680px] flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
           <button
             onClick={() => setView("onboarding")}
             className="flex items-center gap-3 transition hover:opacity-80"
@@ -1030,7 +1037,7 @@ export default function HomePage() {
                       {active && (
                         <motion.div
                           layoutId="beam-type-indicator"
-                          className="absolute inset-0 -z-10 rounded-full bg-gradient-to-r from-cyan-500 to-blue-500 shadow-lg"
+                          className="absolute inset-0 -z-10 rounded-full bg-cyan-300"
                           transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
                         />
                       )}
@@ -1111,8 +1118,12 @@ export default function HomePage() {
           </div>
         </div>
       ) : mode === "beam" ? (
-        <div className="mx-auto flex w-full max-w-none flex-col gap-4 px-4 pt-4 sm:px-6">
-          <div className="grid gap-6 xl:grid-cols-[380px_minmax(0,1fr)_380px]">
+        <div className="mx-auto flex w-full max-w-[1680px] flex-col gap-4 px-4 pt-4 sm:px-6">
+          <div className="workspace-heading">
+            <div><p className="eyebrow">MOMENT CALCULATOR / KİRİŞ ANALİZİ</p><h2>Kiriş çalışma alanı</h2><p>Modeli tanımla, yükleri yerleştir ve kirişin davranışını incele.</p></div>
+            <span className="solver-status"><i />{error ? "Modeli kontrol et" : result ? "Hesap güncel" : "Hesaplanıyor…"}</span>
+          </div>
+          <div className="grid items-start gap-5 xl:grid-cols-[340px_minmax(0,1fr)] 2xl:grid-cols-[340px_minmax(0,1fr)_300px]">
             <div className="space-y-6">
               <section className="panel space-y-3 p-3 sm:p-4">
                 <div className="flex items-center justify-between gap-2">
@@ -1223,6 +1234,7 @@ export default function HomePage() {
                 onMomentMagnitudeChange={handleMomentMagnitudeChange}
                 onLengthChange={setLengthAndClear}
               />
+              <BeamSimulation payload={solvePayload} result={result} loading={isPending || (!result && !error)} error={error} />
               <BeamDiagrams
                 x={diagramData.x}
                 shear={diagramData.shear}
@@ -1235,7 +1247,7 @@ export default function HomePage() {
               />
             </div>
 
-            <div className="panel space-y-6 p-6">
+            <div className="panel space-y-6 p-5 xl:col-span-2 2xl:col-span-1">
               <div>
                 <span className="tag">Çözüm</span>
                 <p className="text-sm text-slate-400">Mesnet tepkileri ve denge kontrolü</p>
@@ -1279,7 +1291,7 @@ export default function HomePage() {
                       ) : null}
                       {reactions && reactions.length > 0 && (
                         <div className="panel-muted col-span-full p-4 text-sm text-slate-300">
-                          <p className="font-medium text-slate-200">Denge kontrolü</p>
+                          <p className="font-medium text-slate-200">Tepki toplamı</p>
                           <p>Tepki toplamı = {reactions.reduce((sum, r) => sum + (r.vertical ?? 0), 0).toFixed(2)} kN</p>
                         </div>
                       )}
@@ -1290,7 +1302,7 @@ export default function HomePage() {
                     <button
                       type="button"
                       onClick={() => setIsSolutionOpen(true)}
-                      className="group relative w-full overflow-hidden rounded-full bg-gradient-to-r from-cyan-400 to-blue-500 py-2.5 text-sm font-semibold text-slate-950 transition hover:from-cyan-500 hover:to-blue-400 shadow-lg"
+                      className="group relative w-full overflow-hidden rounded-full bg-cyan-300 py-2.5 text-sm font-semibold text-slate-950 transition hover:from-cyan-500 hover:to-blue-400 shadow-sm"
                     >
                       <span className="relative z-10">Detaylı Çözüm Adımlarını Göster</span>
                     </button>

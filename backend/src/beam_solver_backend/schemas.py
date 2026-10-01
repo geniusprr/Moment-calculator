@@ -11,20 +11,24 @@ DistributedLoadShape = Literal["uniform", "triangular_increasing", "triangular_d
 BeamType = Literal["simply_supported", "cantilever"]
 
 
-class Support(BaseModel):
+class FiniteInput(BaseModel):
+    model_config = {"allow_inf_nan": False}
+
+
+class Support(FiniteInput):
     id: str = Field(min_length=1)
     type: SupportType
     position: float = Field(ge=0)
 
 
-class PointLoad(BaseModel):
+class PointLoad(FiniteInput):
     id: str = Field(min_length=1)
     magnitude: float = Field(gt=0, description="Load magnitude in kN")
     position: float = Field(ge=0, description="Distance from the left end in metres")
     angle_deg: float = Field(default=-90.0, description="Angle measured from +x axis (degrees)")
 
 
-class UniformDistributedLoad(BaseModel):
+class UniformDistributedLoad(FiniteInput):
     id: str = Field(min_length=1)
     magnitude: float = Field(ge=0, description="Load intensity in kN/m")
     start: float = Field(ge=0, description="Start position in metres")
@@ -33,7 +37,7 @@ class UniformDistributedLoad(BaseModel):
     shape: DistributedLoadShape = Field(default="uniform")
 
 
-class MomentLoad(BaseModel):
+class MomentLoad(FiniteInput):
     id: str = Field(min_length=1)
     magnitude: float = Field(gt=0, description="Moment magnitude in kN*m")
     position: float = Field(ge=0, description="Application position in metres")
@@ -41,19 +45,22 @@ class MomentLoad(BaseModel):
 
 
 class SolveRequest(BaseModel):
+    model_config = {"allow_inf_nan": False}
     length: float = Field(gt=0.5, le=30.0)
-    supports: List[Support] = Field(default_factory=list)
-    point_loads: List[PointLoad] = Field(default_factory=list)
-    udls: List[UniformDistributedLoad] = Field(default_factory=list)
-    moment_loads: List[MomentLoad] = Field(default_factory=list)
+    supports: List[Support] = Field(default_factory=list, max_length=4)
+    point_loads: List[PointLoad] = Field(default_factory=list, max_length=32)
+    udls: List[UniformDistributedLoad] = Field(default_factory=list, max_length=32)
+    moment_loads: List[MomentLoad] = Field(default_factory=list, max_length=32)
     beam_type: BeamType = Field(default="simply_supported", description="Beam boundary condition configuration")
-    elastic_modulus_gpa: float = Field(default=200.0, description="Elastisite modulu (GPa)")
-    moment_inertia_m4: float = Field(default=1e-4, description="Kesit atalet momenti (m^4)")
+    elastic_modulus_gpa: float = Field(default=200.0, gt=0, description="Elastisite modulu (GPa)")
+    moment_inertia_m4: float = Field(default=1e-4, gt=0, description="Kesit atalet momenti (m^4)")
 
     @model_validator(mode="after")
     def validate_domain(self, info: ValidationInfo) -> "SolveRequest":
         """Ensure the provided loads and supports form a valid beam model."""
         length = self.length
+        if any(not 0 <= s.position <= length for s in self.supports):
+            raise ValueError("Mesnet konumları kiriş boyu içinde olmalıdır.")
 
         if self.beam_type == "simply_supported":
             if len(self.supports) != 2:
@@ -103,6 +110,22 @@ class SolveRequest(BaseModel):
                 raise ValueError("Moment application position must lie on the beam span.")
 
         return self
+
+
+class SimulationRequest(SolveRequest):
+    mass_per_length_kgm: float = Field(default=100.0, gt=0, le=100000.0)
+    damping_ratio: float = Field(default=0.02, ge=0, le=0.3)
+
+
+class SimulationResponse(BaseModel):
+    x: List[float]
+    static_deflection_mm: List[float]
+    angular_frequencies_rad_s: List[float]
+    modal_static_shapes_mm: List[List[float]]
+    damping_ratio: float
+    fundamental_frequency_hz: float
+    element_count: int
+    notes: List[str]
 
 
 class SupportReaction(BaseModel):

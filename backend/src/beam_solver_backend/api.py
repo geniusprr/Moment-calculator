@@ -3,6 +3,8 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 
 from beam_solver_backend.schemas import (
+    SimulationRequest,
+    SimulationResponse,
     ChimneyPeriodRequest,
     ChimneyPeriodResponse,
     SolveRequest,
@@ -15,6 +17,15 @@ from beam_solver_backend.solvers import (
 )
 
 router = APIRouter()
+
+
+@router.post("/simulate", response_model=SimulationResponse)
+def simulate(payload: SimulationRequest) -> SimulationResponse:
+    from beam_solver_backend.dynamics import simulate_beam
+    try:
+        return simulate_beam(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/solve", response_model=SolveResponse)

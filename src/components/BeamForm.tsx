@@ -1,5 +1,8 @@
 "use client";
 
+import { useState } from "react";
+import { HelpHint } from "@/components/HelpHint";
+
 import type {
   BeamType,
   MomentLoadInput,
@@ -40,8 +43,8 @@ const fieldClasses =
   "w-full rounded-xl border border-slate-700/80 bg-slate-900/80 px-4 py-2 text-sm text-slate-100 focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-500/40";
 
 const sectionTitleClass = "text-sm font-semibold text-slate-200";
-const sectionHintClass = "text-xs text-slate-500";
-const labelClass = "text-xs font-medium uppercase tracking-wide text-slate-400";
+const sectionHintClass = "text-xs leading-relaxed text-slate-400";
+const labelClass = "text-xs font-medium text-slate-400";
 
 export function BeamForm({
   beamType,
@@ -70,17 +73,20 @@ export function BeamForm({
   momentInertiaCm4,
   onMomentInertiaCm4Change,
 }: BeamFormProps) {
-  const maxSupports = 4;
+  const maxSupports = beamType === "cantilever" ? 4 : 2;
+  const [width, setWidth] = useState(30);
+  const [height, setHeight] = useState(50);
   const supportHint =
     beamType === "cantilever"
       ? "Konsol çözümü için en az bir ankastre mesnet gerekir (x=0 veya x=L). Ek mesnet ekleyebilirsiniz."
-      : "Basit kiriş için en az iki mesnet gereklidir. Ek mesnet ekleyebilirsiniz.";
+      : "Basit kiriş için iki farklı konumda mafsallı veya kayar mesnet tanımlayın.";
   return (
-    <div className="panel space-y-6 p-6">
+    <div className="panel beam-form space-y-6 p-5">
       <div className="flex items-center justify-between">
         <div>
-          <span className="tag">Model Girişleri</span>
-          <p className="text-sm text-slate-400">Kiriş uzunluğu, mesnetler ve yük durumları</p>
+          <p className="eyebrow">01 / MODEL GİRİŞLERİ</p>
+          <h3 className="mt-1 text-lg font-semibold">Kirişini tanımla</h3>
+          <p className="mt-1 text-xs text-slate-400">Birimler her alanın yanında gösterilir.</p>
         </div>
         <button
           onClick={onReset}
@@ -91,13 +97,13 @@ export function BeamForm({
         </button>
       </div>
 
-      <section className="grid gap-4 sm:grid-cols-3">
-        <label className="space-y-2">
-          <span className={labelClass}>Kiriş uzunluğu (m)</span>
+      <section className="grid grid-cols-2 gap-4">
+        <label className="col-span-2 space-y-2">
+          <span className={labelClass}>Kiriş uzunluğu L (m) <HelpHint label="Kiriş uzunluğu">Toplam kiriş boyu. Tüm konumlar sol uçtan ölçülür: x = 0 sol uç, x = L sağ uç. 0.5 m’den büyük ve en fazla 30 m girin.</HelpHint></span>
           <input
             type="number"
-            min={0.5}
-            max={20}
+            min={0.6}
+            max={30}
             step={0.1}
             className={fieldClasses}
             value={length}
@@ -105,7 +111,7 @@ export function BeamForm({
           />
         </label>
         <label className="space-y-2">
-          <span className={labelClass}>E - Elastisite Modülü (GPa)</span>
+          <span className={labelClass}>Elastisite E (GPa) <HelpHint label="Elastisite modülü">Malzemenin elastik rijitliği. Çelik için 200 GPa örnek bir değerdir. E arttıkça sehim azalır. Beton için proje/malzeme değerini kullanın.</HelpHint></span>
           <input
             type="number"
             min={1}
@@ -117,7 +123,7 @@ export function BeamForm({
           />
         </label>
         <label className="space-y-2">
-          <span className={labelClass}>I - Atalet Momenti (cm⁴)</span>
+          <span className={labelClass}>Atalet I (cm⁴) <HelpHint label="Atalet momenti">Eğilme eksenine göre kesit atalet momenti. Dikdörtgen kesitte I = b · h³ / 12. h, düşey kesit yüksekliğidir. 1 cm⁴ = 10⁻⁸ m⁴.</HelpHint></span>
           <input
             type="number"
             min={1}
@@ -129,11 +135,20 @@ export function BeamForm({
           />
         </label>
       </section>
+      <details className="section-helper">
+        <summary>Dikdörtgen kesitten I hesapla</summary>
+        <div className="mt-3 grid grid-cols-2 gap-3">
+          <label className="text-xs text-slate-400">Genişlik b (cm)<input className={`${fieldClasses} mt-1`} type="number" min="0.1" value={width} onChange={(e) => setWidth(Number(e.target.value))} /></label>
+          <label className="text-xs text-slate-400">Yükseklik h (cm)<input className={`${fieldClasses} mt-1`} type="number" min="0.1" value={height} onChange={(e) => setHeight(Number(e.target.value))} /></label>
+          <p className="col-span-2 text-xs text-slate-400">I = b × h³ / 12 = {(width*height**3/12).toLocaleString("tr-TR", { maximumFractionDigits: 2 })} cm⁴</p>
+          <button className="secondary-button col-span-2" type="button" disabled={width <= 0 || height <= 0} onClick={() => onMomentInertiaCm4Change(width*height**3/12)}>Bu I değerini kullan</button>
+        </div>
+      </details>
 
       <section className="space-y-3">
         <header className="flex items-center justify-between">
           <div>
-            <p className={sectionTitleClass}>Mesnetler</p>
+            <p className={sectionTitleClass}>02 / Mesnetler <HelpHint label="Mesnetler">Mafsallı ve kayar mesnetlerde düşey yer değiştirme sıfırdır; dönme serbesttir. Ankastre mesnette hem sehim hem dönme sıfırdır. Konsolda en az bir uç ankastre olmalıdır.</HelpHint></p>
             <p className={sectionHintClass}>{supportHint}</p>
           </div>
           <button
@@ -183,7 +198,7 @@ export function BeamForm({
                     >
                       <option value="pin">Menteşe</option>
                       <option value="roller">Kayar</option>
-                      <option value="fixed">Ankastre</option>
+                      {beamType === "cantilever" && <option value="fixed">Ankastre</option>}
                     </select>
                   </label>
                   <label className="space-y-1">
@@ -207,7 +222,7 @@ export function BeamForm({
 
       <section className="space-y-3">
         <header className="flex items-center justify-between">
-          <p className={sectionTitleClass}>Tekil yükler</p>
+          <p className={sectionTitleClass}>03 / Tekil yükler <HelpHint label="Tekil yük">Kuvveti kN, konumu m olarak girin. Açı −90° aşağı, +90° yukarı, 0° sağ yönüdür. Yük yönü sehim yönünü belirler.</HelpHint></p>
           <button
             type="button"
             onClick={onAddPointLoad}
@@ -287,7 +302,7 @@ export function BeamForm({
 
       <section className="space-y-3">
         <header className="flex items-center justify-between">
-          <p className={sectionTitleClass}>Yayılı yükler</p>
+          <p className={sectionTitleClass}>04 / Yayılı yükler <HelpHint label="Yayılı yük">Yoğunluk kN/m cinsindedir. Başlangıç ve bitiş sol uçtan ölçülür. Üçgen yüklerde büyüklük tepe yoğunluğudur; toplam kuvvet q × aralık / 2 olur.</HelpHint></p>
           <button
             type="button"
             onClick={onAddUdl}
@@ -389,7 +404,7 @@ export function BeamForm({
 
       <section className="space-y-3">
         <header className="flex items-center justify-between">
-          <p className={sectionTitleClass}>Tekil momentler</p>
+          <p className={sectionTitleClass}>05 / Moment yükleri <HelpHint label="Moment yükü">Noktasal kuvvet çifti. Büyüklük kN·m cinsindedir. ↺ saat yönü tersi, ↻ saat yönüdür. Pozitif sehim aşağı yönlüdür.</HelpHint></p>
           <button
             type="button"
             onClick={onAddMoment}

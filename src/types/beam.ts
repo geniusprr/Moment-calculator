@@ -44,6 +44,17 @@ export interface BeamSolveRequest {
   moment_inertia_m4?: number;
 }
 
+export interface BeamSimulationResponse {
+  x: number[];
+  static_deflection_mm: number[];
+  angular_frequencies_rad_s: number[];
+  modal_static_shapes_mm: number[][];
+  damping_ratio: number;
+  fundamental_frequency_hz: number;
+  element_count: number;
+  notes: string[];
+}
+
 export interface SupportReaction {
   support_id: string;
   support_type: SupportType;

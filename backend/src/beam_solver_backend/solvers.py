@@ -315,8 +315,8 @@ def _determine_method_recommendation(payload: SolveRequest) -> MethodRecommendat
 
 
 def _moment_sign(direction) -> float:
-    """Map textual moment direction to a numerical sign."""
-    return 1.0 if direction == "ccw" else -1.0
+    """Clockwise applied couples make a positive jump in sagging M(x)."""
+    return -1.0 if direction == "ccw" else 1.0
 
 
 def macaulay(x: np.ndarray, a: float, n: int) -> np.ndarray:
@@ -344,7 +344,7 @@ def get_applied_loads_at_x(x: float, payload: SolveRequest) -> Tuple[float, floa
 
     # Moment loads
     for m_load in payload.moment_loads:
-        signed_t = m_load.magnitude * _moment_sign(m_load.direction)  # CCW positive
+        signed_t = m_load.magnitude * _moment_sign(m_load.direction)  # clockwise positive moment-diagram jump
         pos = m_load.position
         moment += signed_t * macaulay(x_arr, pos, 0)[0]
         theta -= signed_t * macaulay(x_arr, pos, 1)[0]
@@ -362,7 +362,7 @@ def get_applied_loads_at_x(x: float, payload: SolveRequest) -> Tuple[float, floa
             theta += (q / 6.0) * (macaulay(x_arr, a_pos, 3)[0] - macaulay(x_arr, b_pos, 3)[0])
             w += (q / 24.0) * (macaulay(x_arr, a_pos, 4)[0] - macaulay(x_arr, b_pos, 4)[0])
         elif udl.shape == "triangular_increasing":
-            moment -= (q / (6.0 * L_u)) * (macaulay(x_arr, a_pos, 3)[0] - macaulay(x_arr, b_pos, 3)[0]) + (q / 2.0) * macaulay(x_arr, b_pos, 2)[0]
+            moment -= (q / (6.0 * L_u)) * (macaulay(x_arr, a_pos, 3)[0] - macaulay(x_arr, b_pos, 3)[0]) - (q / 2.0) * macaulay(x_arr, b_pos, 2)[0]
             theta += (q / (24.0 * L_u)) * (macaulay(x_arr, a_pos, 4)[0] - macaulay(x_arr, b_pos, 4)[0]) - (q / 6.0) * macaulay(x_arr, b_pos, 3)[0]
             w += (q / (120.0 * L_u)) * (macaulay(x_arr, a_pos, 5)[0] - macaulay(x_arr, b_pos, 5)[0]) - (q / 24.0) * macaulay(x_arr, b_pos, 4)[0]
         elif udl.shape == "triangular_decreasing":
@@ -370,7 +370,7 @@ def get_applied_loads_at_x(x: float, payload: SolveRequest) -> Tuple[float, floa
             theta_udl = (q / 6.0) * (macaulay(x_arr, a_pos, 3)[0] - macaulay(x_arr, b_pos, 3)[0])
             w_udl = (q / 24.0) * (macaulay(x_arr, a_pos, 4)[0] - macaulay(x_arr, b_pos, 4)[0])
 
-            moment_inc = (q / (6.0 * L_u)) * (macaulay(x_arr, a_pos, 3)[0] - macaulay(x_arr, b_pos, 3)[0]) + (q / 2.0) * macaulay(x_arr, b_pos, 2)[0]
+            moment_inc = (q / (6.0 * L_u)) * (macaulay(x_arr, a_pos, 3)[0] - macaulay(x_arr, b_pos, 3)[0]) - (q / 2.0) * macaulay(x_arr, b_pos, 2)[0]
             theta_inc = (q / (24.0 * L_u)) * (macaulay(x_arr, a_pos, 4)[0] - macaulay(x_arr, b_pos, 4)[0]) - (q / 6.0) * macaulay(x_arr, b_pos, 3)[0]
             w_inc = (q / (120.0 * L_u)) * (macaulay(x_arr, a_pos, 5)[0] - macaulay(x_arr, b_pos, 5)[0]) - (q / 24.0) * macaulay(x_arr, b_pos, 4)[0]
 
@@ -462,17 +462,17 @@ def evaluate_diagrams(
             theta_ei += (q / 6.0) * (macaulay(x_axis, a, 3) - macaulay(x_axis, b, 3))
             w_ei += (q / 24.0) * (macaulay(x_axis, a, 4) - macaulay(x_axis, b, 4))
         elif udl.shape == "triangular_increasing":
-            shear -= (q / (2.0 * L_u)) * (macaulay(x_axis, a, 2) - macaulay(x_axis, b, 2)) + q * macaulay(x_axis, b, 1)
-            moment -= (q / (6.0 * L_u)) * (macaulay(x_axis, a, 3) - macaulay(x_axis, b, 3)) + (q / 2.0) * macaulay(x_axis, b, 2)
+            shear -= (q / (2.0 * L_u)) * (macaulay(x_axis, a, 2) - macaulay(x_axis, b, 2)) - q * macaulay(x_axis, b, 1)
+            moment -= (q / (6.0 * L_u)) * (macaulay(x_axis, a, 3) - macaulay(x_axis, b, 3)) - (q / 2.0) * macaulay(x_axis, b, 2)
             theta_ei += (q / (24.0 * L_u)) * (macaulay(x_axis, a, 4) - macaulay(x_axis, b, 4)) - (q / 6.0) * macaulay(x_axis, b, 3)
             w_ei += (q / (120.0 * L_u)) * (macaulay(x_axis, a, 5) - macaulay(x_axis, b, 5)) - (q / 24.0) * macaulay(x_axis, b, 4)
         elif udl.shape == "triangular_decreasing":
             shear_udl = q * (macaulay(x_axis, a, 1) - macaulay(x_axis, b, 1))
-            shear_inc = (q / (2.0 * L_u)) * (macaulay(x_axis, a, 2) - macaulay(x_axis, b, 2)) + q * macaulay(x_axis, b, 1)
+            shear_inc = (q / (2.0 * L_u)) * (macaulay(x_axis, a, 2) - macaulay(x_axis, b, 2)) - q * macaulay(x_axis, b, 1)
             shear -= (shear_udl - shear_inc)
 
             moment_udl = (q / 2.0) * (macaulay(x_axis, a, 2) - macaulay(x_axis, b, 2))
-            moment_inc = (q / (6.0 * L_u)) * (macaulay(x_axis, a, 3) - macaulay(x_axis, b, 3)) + (q / 2.0) * macaulay(x_axis, b, 2)
+            moment_inc = (q / (6.0 * L_u)) * (macaulay(x_axis, a, 3) - macaulay(x_axis, b, 3)) - (q / 2.0) * macaulay(x_axis, b, 2)
             moment -= (moment_udl - moment_inc)
 
             theta_udl = (q / 6.0) * (macaulay(x_axis, a, 3) - macaulay(x_axis, b, 3))
@@ -588,10 +588,10 @@ def generate_detailed_solution_steps(
         if udl.shape == "uniform":
             m_terms.append(f"{-q/2.0:+.2f} \\langle x - {a:.2f} \\rangle^2 {+q/2.0:+.2f} \\langle x - {b:.2f} \\rangle^2")
         elif udl.shape == "triangular_increasing":
-            m_terms.append(f"{-q/(6.0*Lu):+.4f} \\langle x - {a:.2f} \\rangle^3 {+q/(6.0*Lu):+.4f} \\langle x - {b:.2f} \\rangle^3 {-q/2.0:+.2f} \\langle x - {b:.2f} \\rangle^2")
+            m_terms.append(f"{-q/(6.0*Lu):+.4f} \\langle x - {a:.2f} \\rangle^3 {+q/(6.0*Lu):+.4f} \\langle x - {b:.2f} \\rangle^3 {+q/2.0:+.2f} \\langle x - {b:.2f} \\rangle^2")
         elif udl.shape == "triangular_decreasing":
             m_terms.append(f"{-q/2.0:+.2f} \\langle x - {a:.2f} \\rangle^2 {+q/2.0:+.2f} \\langle x - {b:.2f} \\rangle^2")
-            m_terms.append(f"{+q/(6.0*Lu):+.4f} \\langle x - {a:.2f} \\rangle^3 {-q/(6.0*Lu):+.4f} \\langle x - {b:.2f} \\rangle^3 {+q/2.0:+.2f} \\langle x - {b:.2f} \\rangle^2")
+            m_terms.append(f"{+q/(6.0*Lu):+.4f} \\langle x - {a:.2f} \\rangle^3 {-q/(6.0*Lu):+.4f} \\langle x - {b:.2f} \\rangle^3 {-q/2.0:+.2f} \\langle x - {b:.2f} \\rangle^2")
     m_eq = " ".join(m_terms)
 
     integration_steps.append(
@@ -797,8 +797,8 @@ def solve_beam_unified(payload: SolveRequest) -> SolveResponse:
             A[2 + k, i] = (1.0 / 6.0) * macaulay(np.array([s_k]), supports[i].position, 3)[0]
         for j, idx in enumerate(fixed_indices):
             A[2 + k, N_s + j] = (1.0 / 2.0) * macaulay(np.array([s_k]), supports[idx].position, 2)[0]
-        A[2 + k, N_s + N_f] = s_k
-        A[2 + k, N_s + N_f + 1] = 1.0
+        A[2 + k, N_s + N_f] = -s_k
+        A[2 + k, N_s + N_f + 1] = -1.0
         _, _, w_val = get_applied_loads_at_x(s_k, payload)
         B[2 + k] = w_val
 
@@ -809,7 +809,7 @@ def solve_beam_unified(payload: SolveRequest) -> SolveResponse:
             A[2 + N_s + j, i] = (1.0 / 2.0) * macaulay(np.array([f_j]), supports[i].position, 2)[0]
         for j_prime, idx_prime in enumerate(fixed_indices):
             A[2 + N_s + j, N_s + j_prime] = macaulay(np.array([f_j]), supports[idx_prime].position, 1)[0]
-        A[2 + N_s + j, N_s + N_f] = 1.0
+        A[2 + N_s + j, N_s + N_f] = -1.0
         _, theta_val, _ = get_applied_loads_at_x(f_j, payload)
         B[2 + N_s + j] = theta_val
 

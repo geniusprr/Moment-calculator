@@ -95,9 +95,9 @@ def test_concentrated_moment_effect():
     result = solve_beam(request)
     reactions = _reaction_map(result)
 
-    assert reactions["A"].vertical == approx(-8.0, rel=1e-3)
-    assert reactions["B"].vertical == approx(8.0, rel=1e-3)
-    assert max(result.diagram.moment) == approx(80.0, rel=1e-2)
+    assert reactions["A"].vertical == approx(8.0, rel=1e-3)
+    assert reactions["B"].vertical == approx(-8.0, rel=1e-3)
+    assert min(result.diagram.moment) == approx(-80.0, rel=1e-2)
     assert result.meta.recommendation.method == "area"
 
 
@@ -203,8 +203,7 @@ def test_reference_case_with_applied_moment_and_overhang():
     result = solve_beam(request)
     reactions = _reaction_map(result)
 
-    assert reactions["A"].vertical == approx(26.0, rel=1e-6)
-    assert reactions["B"].vertical == approx(58.0, rel=1e-6)
-    assert result.meta.max_positive_position == approx(1.625, rel=1e-6)
-    assert result.meta.max_positive_moment == approx(5.125, rel=1e-6)
-
+    assert reactions["A"].vertical == approx(18.0, rel=1e-6)
+    assert reactions["B"].vertical == approx(66.0, rel=1e-6)
+    assert result.meta.max_positive_position == approx(1.125, rel=1e-6)
+    assert result.meta.max_positive_moment == approx(26.125, rel=1e-6)
