@@ -217,7 +217,7 @@ export function BeamDiagrams({
 }: BeamDiagramsProps) {
   const chartRef = useRef<HTMLDivElement | null>(null);
   const hasData = x.length > 0;
-  const [chartMargins, setChartMargins] = useState({ left: 50, right: 20 });
+  const [chartMargins, setChartMargins] = useState({ left: 50, right: 20, mobile: false });
   useEffect(() => {
     const element = chartRef.current;
     if (!element) return;
@@ -225,8 +225,8 @@ export function BeamDiagrams({
       const workspace = element.closest(".analysis-grid");
       const inset = workspace ? Number.parseFloat(getComputedStyle(workspace).getPropertyValue("--beam-plot-inset")) || 0 : 0;
       const margin = inset + .02 * Math.max(0, entry.contentRect.width - 2 * inset);
-      const next = inset > 0 ? { left: margin, right: margin } : { left: 50, right: 20 };
-      setChartMargins((previous) => previous.left === next.left && previous.right === next.right ? previous : next);
+      const next = { left: margin, right: margin, mobile: inset === 0 };
+      setChartMargins((previous) => previous.left === next.left && previous.right === next.right && previous.mobile === next.mobile ? previous : next);
     });
     observer.observe(element);
     return () => observer.disconnect();
@@ -309,11 +309,19 @@ export function BeamDiagrams({
   const [selected, setSelected] = useState<"moment" | "shear" | "deflection" | "normal" | "rotation">("moment");
   const plots = { moment: momentPlot, shear: shearPlot, deflection: deflectionPlot, normal: normalPlot, rotation: rotationPlot };
   const labels = { moment: "Moment", shear: "Kesme", deflection: "Sehim", normal: "Eksenel", rotation: "Eğim" };
+  const units = { moment: "M (kNm)", shear: "T (kN)", deflection: "w (mm)", normal: "N (kN)", rotation: "θ (mrad)" };
   const plot = plots[selected];
   const alignedLayout: Partial<Layout> = {
     ...plot.layout,
-    margin: { l: chartMargins.left, r: chartMargins.right, t: 12, b: 40 },
-    xaxis: { ...plot.layout.xaxis, range: [0, x[x.length - 1] || 1], autorange: false },
+    margin: { l: chartMargins.left, r: chartMargins.right, t: 12, b: chartMargins.mobile ? 24 : 40 },
+    xaxis: {
+      ...plot.layout.xaxis, range: [0, x[x.length - 1] || 1], autorange: false,
+      ...(chartMargins.mobile ? { title: { text: "" }, tickfont: { color: "#94a3b8", size: 10 }, nticks: 5 } : {}),
+    },
+    yaxis: {
+      ...plot.layout.yaxis,
+      ...(chartMargins.mobile ? { title: { text: "" }, ticklabelposition: "inside", ticks: "inside", ticklen: 3, tickfont: { color: "#94a3b8", size: 10 }, nticks: 5 } : {}),
+    },
   };
 
   return (
@@ -330,6 +338,7 @@ export function BeamDiagrams({
           <div className="diagram-tabs" role="group" aria-label="Diyagram seçimi">
             {(Object.keys(labels) as (keyof typeof labels)[]).map((key) => <button type="button" key={key} aria-pressed={selected === key} onClick={() => setSelected(key)}>{labels[key]}</button>)}
           </div>
+          <div className="mobile-diagram-unit">{units[selected]} <span>· x (m)</span></div>
           <div ref={chartRef}>
             <Plot data={plot.data} layout={alignedLayout} config={{ displayModeBar: false, responsive: true }} useResizeHandler style={{ width: "100%", height: "260px" }} />
           </div>
