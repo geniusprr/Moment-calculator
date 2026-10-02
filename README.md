@@ -1,4 +1,4 @@
-> Güncel Vercel dağıtımı, fizik modeli ve hesap düzeltmeleri: [Dağıtım ve Simülasyon](docs/DEPLOYMENT_AND_SIMULATION.md).
+> Canlı uygulama: https://moment-calculator.vercel.app/ — fizik modeli ve hesap düzeltmeleri: [Dağıtım ve Simülasyon](docs/DEPLOYMENT_AND_SIMULATION.md).
 
 # Beam Solver - Kiriş Analiz Uygulaması Kurulum Kılavuzu
 

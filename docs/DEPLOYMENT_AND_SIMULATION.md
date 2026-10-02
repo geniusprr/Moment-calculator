@@ -5,10 +5,19 @@
 Depo kökünden Vercel projesi oluşturulur. `vercel.json` iki Services tanımlar:
 Next.js arayüz (`root: .`) ve FastAPI sunucu (`root: backend`, `main:app`).
 `/api/*` ve `/health` istekleri Python servisine, diğer yollar arayüze gider.
-Vercel Services beta özelliğidir; canlı dağıtım Vercel hesabı erişimi ve proje
-oluşturulması tamamlandıktan sonra doğrulanmalıdır. Yerel CLI 62.1.0 iki servisi
-doğru tanımıştır; bu çalışma ortamının ağ arayüzü kısıtı CLI'nin yerel frontend
-başlatıcısını engellemiştir. Bu, bulutta yayınlandığı anlamına gelmez.
+Canlı adres: https://moment-calculator.vercel.app/
+
+2 Ekim 2026 tarihinde `f9783865b5ec47cc0eaaae71549318b48bf88612`
+sürümü Services ön ayarıyla production ortamına yayımlandı; Vercel durumu READY.
+GitHub `main` dalı projeye bağlıdır. `/health`, `/api/solve`, `/api/simulate`
+ve `/api/chimney/period` canlı isteklerle doğrulandı. 6 m basit kirişte merkez
+10 kN yük için 2.25 mm, ters yönde −2.25 mm sehim elde edildi; FEM statik
+sonucu 2.2500000026 mm ve temel frekans 19.513 Hz (100 kg/m).
+Üretim arayüzünde 8 m, 4 kN/m yükle 10.6667 mm statik sehim, 10.976 Hz
+dinamik model, ani yük ve duraklatma kontrolleri çalıştı.
+
+Vercel Services beta özelliğidir. Yeni dağıtımlarda iki servis ve aynı
+origin üzerinden API erişimi yeniden kontrol edilmelidir.
 
 `NEXT_PUBLIC_API_BASE_URL` yayımlanan projede boş bırakılmalı veya `/api`
 olmalıdır. Eski `http://localhost:8000/api` ayarı üretimde kullanılmamalıdır.
