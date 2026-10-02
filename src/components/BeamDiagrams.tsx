@@ -4,7 +4,15 @@ import dynamic from "next/dynamic";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Data, Layout } from "plotly.js";
 
+export const DIAGRAM_OPTIONS = [
+  { key: "moment", label: "Moment" }, { key: "shear", label: "Kesme" },
+  { key: "deflection", label: "Sehim" }, { key: "normal", label: "Eksenel" }, { key: "rotation", label: "Eğim" },
+] as const;
+export type DiagramKind = typeof DIAGRAM_OPTIONS[number]["key"];
+
 interface BeamDiagramsProps {
+  selected: DiagramKind;
+  onSelect: (selected: DiagramKind) => void;
   x: number[];
   shear: number[];
   moment: number[];
@@ -206,6 +214,8 @@ function diagramData(
 }
 
 export function BeamDiagrams({
+  selected,
+  onSelect,
   x,
   shear,
   moment,
@@ -306,7 +316,6 @@ export function BeamDiagrams({
     [x, rotation]
   );
 
-  const [selected, setSelected] = useState<"moment" | "shear" | "deflection" | "normal" | "rotation">("moment");
   const plots = { moment: momentPlot, shear: shearPlot, deflection: deflectionPlot, normal: normalPlot, rotation: rotationPlot };
   const labels = { moment: "Moment", shear: "Kesme", deflection: "Sehim", normal: "Eksenel", rotation: "Eğim" };
   const units = { moment: "M (kNm)", shear: "T (kN)", deflection: "w (mm)", normal: "N (kN)", rotation: "θ (mrad)" };
@@ -336,10 +345,10 @@ export function BeamDiagrams({
       {hasData ? (
         <div>
           <div className="diagram-tabs" role="group" aria-label="Diyagram seçimi">
-            {(Object.keys(labels) as (keyof typeof labels)[]).map((key) => <button type="button" key={key} aria-pressed={selected === key} onClick={() => setSelected(key)}>{labels[key]}</button>)}
+            {(Object.keys(labels) as (keyof typeof labels)[]).map((key) => <button type="button" key={key} aria-pressed={selected === key} onClick={() => onSelect(key)}>{labels[key]}</button>)}
           </div>
-          <div className="mobile-diagram-unit">{units[selected]} <span>· x (m)</span></div>
-          <div ref={chartRef}>
+          <div ref={chartRef} className="diagram-plot-frame">
+            <div className="mobile-diagram-unit">{units[selected]} <span>· x (m)</span></div>
             <Plot data={plot.data} layout={alignedLayout} config={{ displayModeBar: false, responsive: true }} useResizeHandler style={{ width: "100%", height: "260px" }} />
           </div>
         </div>

@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import Image from "next/image";
 import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 
-import { BeamDiagrams } from "@/components/BeamDiagrams";
+import { BeamDiagrams, DIAGRAM_OPTIONS, type DiagramKind } from "@/components/BeamDiagrams";
 import { BeamSimulation } from "@/components/BeamSimulation";
 import { BeamForm } from "@/components/BeamForm";
 import { BeamSketch, SketchContextTarget } from "@/components/BeamSketch";
@@ -167,6 +167,7 @@ export default function HomePage() {
   const [chimneyError, setChimneyError] = useState<string | null>(null);
   const [isChimneyPending, startChimneyTransition] = useTransition();
   const [mobilePane, setMobilePane] = useState<"inputs" | "diagrams">("inputs");
+  const [selectedDiagram, setSelectedDiagram] = useState<DiagramKind>("moment");
   const [view, setView] = useState<"onboarding" | "app">("app");
 
   useEffect(() => {
@@ -1021,8 +1022,11 @@ export default function HomePage() {
           </button>
 
           <div className="flex items-center gap-4">
+            {view === "app" && mode === "beam" && <select className="mobile-beam-type" aria-label="Kiriş tipi" value={beamType} onChange={(event) => handleBeamTypeChange(event.target.value as BeamType)}>
+              <option value="simply_supported">Basit kiriş</option><option value="cantilever">Konsol kiriş</option>
+            </select>}
             {view === "app" && mode === "beam" && (
-              <div className="flex items-center gap-1 rounded-full border border-slate-700/70 bg-slate-800/70 p-1 shadow-inner relative">
+              <div className="desktop-beam-types flex items-center gap-1 rounded-full border border-slate-700/70 bg-slate-800/70 p-1 shadow-inner relative">
                 {BEAM_TYPES.map((type) => {
                   const active = beamType === type.key;
                   return (
@@ -1242,13 +1246,14 @@ export default function HomePage() {
                 onLengthChange={setLengthAndClear}
               />}>
               <div className="mobile-workspace-tabs" role="group" aria-label="Çalışma alanı görünümü">
-                <button type="button" aria-pressed={mobilePane === "inputs"} aria-controls="beam-inputs" onClick={() => setMobilePane("inputs")}>Girişleri düzenle</button>
-                <button type="button" aria-pressed={mobilePane === "diagrams"} aria-controls="beam-results" onClick={() => setMobilePane("diagrams")}>Diyagramlar</button>
+                <button type="button" aria-controls={mobilePane === "inputs" ? "beam-results" : "beam-inputs"} onClick={() => setMobilePane(mobilePane === "inputs" ? "diagrams" : "inputs")}>{mobilePane === "inputs" ? "Grafiğe dön" : "Girişler"}</button>
               </div>
             </BeamSimulation>
             <div className="results-column space-y-5" id="beam-results">
               <BeamDiagrams
                 key={mobilePane}
+                selected={selectedDiagram}
+                onSelect={setSelectedDiagram}
                 x={diagramData.x}
                 shear={diagramData.shear}
                 moment={diagramData.moment}
@@ -1334,6 +1339,9 @@ export default function HomePage() {
             </div>
             </div>
           </div>
+          <nav className="mobile-diagram-dock" aria-label="Mobil diyagram seçimi">
+            {DIAGRAM_OPTIONS.map(({ key, label }) => <button key={key} type="button" aria-pressed={mobilePane === "diagrams" && selectedDiagram === key} aria-controls="beam-results" onClick={() => { setSelectedDiagram(key); setMobilePane("diagrams"); }}>{label}</button>)}
+          </nav>
         </div>
       ) : (
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 pt-6 sm:px-6">

@@ -149,3 +149,36 @@ button:focus-visible, summary:focus-visible { outline: 2px solid #67e8f9; outlin
   .beam-sketch .dimension-label { top: auto !important; bottom: 0; font-size: 10px; line-height: 14px; padding-top: 1px; padding-bottom: 1px; }
   .diagram-tabs button { font-size: 11px; }
 }
+
+.mobile-beam-type, .mobile-beam-mode, .mobile-run-button, .mobile-diagram-dock { display: none; }
+.diagram-plot-frame { position: relative; }
+@media (max-width: 767px) {
+  .beam-app > header > div { flex-wrap: nowrap; height: 52px; gap: 8px; }
+  .beam-app > header > div > button { min-width: 0; gap: 8px; }
+  .beam-app > header > div > button > div:first-child { width: 28px; height: 28px; border-radius: 7px; flex-shrink: 0; }
+  .beam-app > header img { width: 23px; height: 23px; }
+  .beam-app > header h1 { font-size: 13px; white-space: nowrap; }
+  .beam-app > header p, .beam-app > header .desktop-beam-types { display: none; }
+  .beam-app > header > div > div > button { display: none; }
+  .mobile-beam-type { display: block; width: 104px; min-height: 34px; padding: 5px 6px; border: 1px solid #34404d; border-radius: 7px; background: #10161e; color: #cbd5e1; font-size: 12px; }
+  .beam-workspace { padding-bottom: calc(88px + env(safe-area-inset-bottom)); }
+  .beam-stage { border-bottom: 0; }
+  .beam-toolbar { position: fixed; inset-inline: 0; bottom: calc(44px + env(safe-area-inset-bottom)); z-index: 45; height: 44px; padding: 4px 12px; gap: 6px; justify-content: flex-start; background: #161d26; border-top: 1px solid #303b48; }
+  .beam-toolbar .segmented-control { display: none; }
+  .mobile-workspace-tabs { display: flex; order: -1; margin-right: auto; border: 0; }
+  .mobile-workspace-tabs button { flex: none; min-height: 34px; padding: 6px 9px; border: 1px solid #34404d; border-radius: 7px; background: #222b36; font-size: 11px; color: #d3dee9; }
+  .mobile-beam-mode { display: block; width: 90px; height: 34px; padding: 5px 7px; border: 1px solid #34404d; border-radius: 7px; background: #10161e; color: #cbd5e1; font-size: 12px; }
+  .mobile-run-button { display: inline-flex; min-width: 34px; height: 34px; padding: 5px; }
+  .beam-toolbar .secondary-button { height: 34px; padding: 6px 9px; font-size: 11px; }
+  .beam-playback { display: none; }
+  .beam-readout { position: absolute; top: 3px; right: 18px; max-width: calc(100% - 36px); padding: 3px 6px; border-radius: 5px; background: #10161ee6; font-size: 9px; line-height: 13px; gap: 4px; z-index: 10; }
+  .beam-stage[data-visual-mode="loads"][data-valid="true"] .beam-readout { display: none; }
+  .beam-settings { position: fixed; inset-inline: 10px; top: auto; bottom: calc(96px + env(safe-area-inset-bottom)); width: auto; max-height: min(50dvh, 360px); z-index: 50; }
+  .results-column { padding-top: 0; scroll-padding-bottom: 16px; }
+  .results-column .diagrams-panel { padding-top: 0; border-top: 0; background: #181d25; }
+  .diagrams-panel .diagram-tabs { display: none; }
+  .mobile-diagram-unit { position: absolute; top: 0; right: 7px; margin: 0; padding: 0; font-size: 9px; line-height: 10px; pointer-events: none; z-index: 1; }
+  .mobile-diagram-dock { position: fixed; inset-inline: 0; bottom: 0; z-index: 45; display: flex; height: calc(44px + env(safe-area-inset-bottom)); padding: 0 6px env(safe-area-inset-bottom); border-top: 1px solid #303b48; background: #10161e; }
+  .mobile-diagram-dock button { flex: 1; min-width: 0; min-height: 44px; padding: 5px 2px; color: #91a4b8; font-size: 11px; cursor: pointer; }
+  .mobile-diagram-dock button[aria-pressed="true"] { color: #67e8f9; background: #122b34; box-shadow: inset 0 2px #67e8f9; }
+}

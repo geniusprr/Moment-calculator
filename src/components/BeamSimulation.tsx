@@ -65,15 +65,20 @@ export function BeamSimulation({ payload, result, loading, error, renderSketch, 
       const response = await simulateBeam({ ...payload, mass_per_length_kgm: mass, damping_ratio: damping / 100 }, next.signal);
       if (!next.signal.aborted) { setModel(response); setPlaying(true); setSettings(false); }
     } catch (err) {
-      if (!next.signal.aborted) setSimulationError(err instanceof Error ? err.message : "Simülasyon hesaplanamadı.");
+      if (!next.signal.aborted) { setSimulationError(err instanceof Error ? err.message : "Simülasyon hesaplanamadı."); setSettings(true); }
     } finally { if (!next.signal.aborted) setBusy(false); }
   }
 
-  return <section className="beam-stage panel" aria-label="Kiriş çalışma alanı">
+  return <section className="beam-stage panel" aria-label="Kiriş çalışma alanı" data-visual-mode={mode} data-valid={valid}>
     <div className="beam-toolbar">
       <div className="segmented-control">
         {([['loads', 'Yükler'], ['static', 'Sehim'], ['dynamic', 'Simüle et']] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={mode === value} onClick={() => { setMode(value); setPlaying(false); }}>{label}</button>)}
       </div>
+      {children}
+      <select className="mobile-beam-mode" aria-label="Kiriş görünümü" value={mode} onChange={(event) => { setMode(event.target.value as typeof mode); setPlaying(false); }}>
+        <option value="loads">Yükler</option><option value="static">Sehim</option><option value="dynamic">Titreşim</option>
+      </select>
+      {dynamic && <button className="mobile-run-button secondary-button" type="button" aria-label={busy ? "Fizik modeli hesaplanıyor" : model ? playing ? "Titreşimi duraklat" : "Titreşime devam et" : "Ani yükü uygula"} disabled={!valid || busy || !Number.isFinite(mass) || mass <= 0 || mass > 100000 || !Number.isFinite(damping) || damping < 0 || damping > 30} onClick={() => model ? setPlaying(!playing) : start()}>{busy ? "…" : model && playing ? "Ⅱ" : "▶"}</button>}
       <button type="button" className="secondary-button" aria-expanded={settings} onClick={() => setSettings(!settings)}>Ayarlar</button>
     </div>
     {renderSketch(hasData && mode !== "loads" ? { x, valuesMm: y, magnification } : undefined)}
@@ -93,8 +98,8 @@ export function BeamSimulation({ payload, result, loading, error, renderSketch, 
         <label>Kütle (kg/m)<HelpHint label="Kütle">Birlikte hareket eden toplam birim uzunluk kütlesi. Öz ağırlık otomatik eklenmez; gerekirse yayılı yük tanımla.</HelpHint><input type="number" min="0.1" max="100000" value={mass} onChange={(e) => setMass(Number(e.target.value))} /></label>
         <label>Sönüm (%)<HelpHint label="Sönüm">Her mod için kritik sönüm oranı. %2 örnek değerdir; malzeme ve bağlantıya göre belirle.</HelpHint><input type="number" min="0" max="30" step="0.5" value={damping} onChange={(e) => setDamping(Number(e.target.value))} /></label>
       </div>
+      {dynamic && <button className="primary-button mt-3" type="button" disabled={!valid || busy || !Number.isFinite(mass) || mass <= 0 || mass > 100000 || !Number.isFinite(damping) || damping < 0 || damping > 30} onClick={start}>{busy ? "Çözülüyor…" : "Ani yükü baştan uygula"}</button>}
+      {simulationError && <p className="status-note mt-3" role="alert">{simulationError}</p>}
     </div>}
-    {simulationError && <p className="status-note" role="alert">{simulationError}</p>}
-    {children}
   </section>;
 }
