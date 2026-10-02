@@ -606,7 +606,7 @@ export function BeamSketch({
               }}
               onContextMenu={(event) => openContextMenu(event, { kind: "support", id: support.id, x: support.position })}
             >
-              {support.type === "fixed" && <span className="text-xs font-semibold text-cyan-200 mb-1">{support.id}</span>}
+              {support.type === "fixed" && <span className="support-name support-fixed-name text-xs font-semibold text-cyan-200 mb-1">{support.id}</span>}
 
               <div
                 className="cursor-ew-resize"
@@ -638,7 +638,7 @@ export function BeamSketch({
                   </>
                 )}
               </div>
-              {support.type !== "fixed" && <span className="text-xs font-semibold text-cyan-200">{support.id}</span>}
+              {support.type !== "fixed" && <span className="support-name text-xs font-semibold text-cyan-200">{support.id}</span>}
             </div>
           );
         })}
@@ -926,10 +926,18 @@ export function BeamSketch({
         ))}
 
         {/* Basit uç etiketleri (biraz daha büyük) */}
-        <div className="absolute bottom-2 left-[2%] right-[2%] flex justify-between text-sm text-slate-500">
+        <div className="beam-end-labels absolute bottom-2 left-[2%] right-[2%] flex justify-between text-sm text-slate-500">
           <span>0 m</span>
           <span>{beamLength.toFixed(1)} m</span>
         </div>
+
+        {[
+          ...supportMarkers.map((support) => ({ key: support.id, position: support.position, label: `${support.id} · ${support.position.toFixed(2)} m` })),
+          ...[0, beamLength].filter((position) => !supports.some((support) => Math.abs(support.position - position) < 1e-6)).map((position) => ({ key: `end-${position}`, position, label: `${position.toFixed(2)} m` })),
+        ].map((marker) => {
+          const percent = positionToPercent(marker.position);
+          return <span key={marker.key} className="mobile-support-coordinate" style={{ left: `${2 + percent * .96}%`, transform: percent < 10 ? "none" : percent > 90 ? "translateX(-100%)" : "translateX(-50%)" }}>{marker.label}</span>;
+        })}
 
         {/* Dinamik parça mesafeleri (komşu noktalar arası) - below the beam with dimension lines */}
         {dimensionSegments.map((seg, idx) => {
@@ -942,17 +950,17 @@ export function BeamSketch({
             <div key={`dim-${idx}`}>
               {/* Start vertical line */}
               <div
-                className="absolute w-0.5 h-8 bg-slate-400"
+                className="dimension-tick absolute w-0.5 h-8 bg-slate-400"
                 style={{ left: `${2 + startPercent * 0.96}%`, top: "calc(50% + 60px)" }}
               />
               {/* End vertical line */}
               <div
-                className="absolute w-0.5 h-8 bg-slate-400"
+                className="dimension-tick absolute w-0.5 h-8 bg-slate-400"
                 style={{ left: `${2 + endPercent * 0.96}%`, top: "calc(50% + 60px)" }}
               />
               {/* Horizontal dimension line */}
               <div
-                className="absolute h-0.5 bg-slate-400"
+                className="dimension-line absolute h-0.5 bg-slate-400"
                 style={{
                   left: `${2 + startPercent * 0.96}%`,
                   width: `${(endPercent - startPercent) * 0.96}%`,
@@ -966,7 +974,7 @@ export function BeamSketch({
                   autoFocus
                   step="0.01"
                   min="0.01"
-                  className="absolute w-16 rounded px-1.5 py-0.5 text-xs font-semibold text-center outline-none ring-2 ring-cyan-400 bg-slate-800 text-cyan-200 z-50"
+                  className="dimension-label absolute w-16 rounded px-1.5 py-0.5 text-xs font-semibold text-center outline-none ring-2 ring-cyan-400 bg-slate-800 text-cyan-200 z-50"
                   style={{ left: `${2 + midPercent * 0.96}%`, transform: "translateX(-50%)", top: "calc(50% + 73px)" }}
                   value={editingValue.value}
                   onChange={handleValueInputChange}
@@ -977,7 +985,7 @@ export function BeamSketch({
                 />
               ) : (
                 <span
-                  className="absolute text-xs font-medium text-slate-300 bg-slate-800/80 px-1.5 py-0.5 rounded cursor-pointer hover:ring-2 hover:ring-white/60 transition-all pointer-events-auto"
+                  className="dimension-label absolute text-xs font-medium text-slate-300 bg-slate-800/80 px-1.5 py-0.5 rounded cursor-pointer hover:ring-2 hover:ring-white/60 transition-all pointer-events-auto"
                   style={{ left: `${2 + midPercent * 0.96}%`, transform: "translateX(-50%)", top: "calc(50% + 73px)" }}
                   onClick={(e) => {
                     e.preventDefault();

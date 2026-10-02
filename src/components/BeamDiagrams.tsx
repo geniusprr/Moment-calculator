@@ -298,7 +298,7 @@ export function BeamDiagrams({
 
   return (
     <div className="diagrams-panel panel space-y-4 p-4 sm:p-6">
-      <div className="flex items-center justify-between">
+      <div className="diagram-header flex items-center justify-between">
         <div>
           <span className="tag">Diyagramlar</span>
           <p className="text-sm text-slate-400">Kesme, moment, eksenel kuvvet, sehim ve eğim diyagramları</p>
@@ -320,4 +320,3 @@ export function BeamDiagrams({
     </div>
   );
 }
-

@@ -102,6 +102,7 @@ button:focus-visible, summary:focus-visible { outline: 2px solid #67e8f9; outlin
 .beam-playback { display: flex; gap: 8px; padding: 0 14px 12px; }
 .beam-settings { position: absolute; right: 10px; top: 55px; width: min(360px, calc(100% - 20px)); max-height: 260px; overflow-y: auto; padding: 16px; background: #181f29; border: 1px solid #415264; border-radius: 12px; box-shadow: 0 10px 40px #0009; z-index: 30; }
 .mobile-workspace-tabs, .mobile-input-footer { display: none; }
+.mobile-support-coordinate { display: none; }
 .diagram-tabs { display: flex; gap: 4px; padding: 4px; border-radius: 9px; background: #10161e; }
 .diagram-tabs button { flex: 1; padding: 10px 4px; font-size: 12px; border-radius: 6px; color: #94a3b8; cursor: pointer; }
 .diagram-tabs button[aria-pressed="true"] { background: #2c3946; color: #67e8f9; }
@@ -132,6 +133,12 @@ button:focus-visible, summary:focus-visible { outline: 2px solid #67e8f9; outlin
   .mobile-input-footer { display: block; position: sticky; bottom: 0; margin-top: 16px; padding: 10px 0; background: #101319ed; }
   .mobile-input-footer button { width: 100%; }
   .beam-form input, .beam-form select, .simulation-settings input:not([type="range"]), .simulation-settings select { font-size: 16px; }
-  .diagrams-panel > div:first-child p { font-size: 11px; }
+  .diagrams-panel .diagram-header { display: none; }
+  .beam-sketch .beam-end-labels, .beam-sketch .support-name { display: none; }
+  .beam-sketch .support-fixed-name { display: inline; visibility: hidden; }
+  .mobile-support-coordinate { display: block; position: absolute; top: calc(50% + 44px); font-size: 10px; line-height: 14px; white-space: nowrap; color: #b6c7d6; font-variant-numeric: tabular-nums; }
+  .beam-sketch .dimension-tick { top: auto !important; bottom: 14px; height: 10px; }
+  .beam-sketch .dimension-line { top: auto !important; bottom: 19px; }
+  .beam-sketch .dimension-label { top: auto !important; bottom: 0; font-size: 10px; line-height: 14px; padding-top: 1px; padding-bottom: 1px; }
   .diagram-tabs button { font-size: 11px; }
 }
