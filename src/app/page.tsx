@@ -1011,7 +1011,7 @@ export default function HomePage() {
             className="flex items-center gap-3 transition hover:opacity-80"
           >
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white shadow-lg ring-1 ring-slate-200/80">
-              <Image src={KtoLogo} alt="KTO Logo" className="h-8 w-8 object-contain" priority />
+              <Image src={KtoLogo} alt="KTO Logo" className="h-8 w-8 object-contain" sizes="32px" unoptimized priority />
             </div>
             <div className="text-left">
               <h1 className="text-lg font-bold text-slate-100 leading-tight">Moment Calculator</h1>
