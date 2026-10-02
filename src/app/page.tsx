@@ -1125,7 +1125,9 @@ export default function HomePage() {
             <span className="solver-status"><i />{error ? "Modeli kontrol et" : result ? "Hesap güncel" : "Hesaplanıyor…"}</span>
           </div>
           <div className="analysis-grid" data-mobile-pane={mobilePane}>
-            <div className="model-inputs space-y-6" id="beam-inputs" onKeyDown={(event) => {
+            <div className="model-inputs space-y-6" id="beam-inputs" onBlurCapture={(event) => {
+              if (event.target instanceof HTMLInputElement && event.target.type === "number" && !event.relatedTarget && window.matchMedia("(max-width: 767px)").matches) setMobilePane("diagrams");
+            }} onKeyDown={(event) => {
               if (event.key === "Enter" && event.target instanceof HTMLInputElement && window.matchMedia("(max-width: 767px)").matches) {
                 event.preventDefault(); event.target.blur(); setMobilePane("diagrams");
               }
