@@ -92,11 +92,12 @@ button:focus-visible, summary:focus-visible { outline: 2px solid #67e8f9; outlin
 .status-note { padding: 10px 12px; border: 1px solid #344656; background: #11232d; font-size: 12px; border-radius: 8px; margin-bottom: 14px; }
 @media (max-width: 640px) { .workspace-heading { align-items: flex-start; } .solver-status { padding: 6px 8px; font-size: 9px; } .simulation-stat strong { font-size: 16px; } }
 
-.analysis-grid { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 20px; align-items: start; }
+.analysis-grid { --beam-plot-inset: 48px; display: grid; grid-template-columns: 340px minmax(0, 1fr); grid-template-rows: min-content 1fr; column-gap: 20px; row-gap: 12px; align-items: start; }
 .model-inputs { grid-column: 1; grid-row: 1 / span 2; min-width: 0; }
 .beam-stage { grid-column: 2; grid-row: 1; position: relative; min-width: 0; }
 .results-column { grid-column: 2; grid-row: 2; min-width: 0; }
-.beam-stage .beam-sketch { border: 0; background: transparent; box-shadow: none; border-radius: 0; padding: 8px 18px; }
+.beam-stage .beam-sketch { border: 0; background: transparent; box-shadow: none; border-radius: 0; padding: 8px 24px; }
+.beam-stage .beam-sketch-canvas { margin-inline: var(--beam-plot-inset); }
 .beam-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 12px 14px 0; }
 .beam-readout { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 4px 16px 12px; color: #94a3b8; font-size: 11px; font-variant-numeric: tabular-nums; }
 .beam-playback { display: flex; gap: 8px; padding: 0 14px 12px; }
@@ -116,7 +117,7 @@ button:focus-visible, summary:focus-visible { outline: 2px solid #67e8f9; outlin
   .beam-app > header button { font-size: 11px; }
   .beam-workspace { flex: 1; min-height: 0; gap: 0; padding: 0; }
   .beam-workspace .workspace-heading { display: none; }
-  .analysis-grid { display: flex; flex-direction: column; gap: 0; flex: 1; min-height: 0; }
+  .analysis-grid { --beam-plot-inset: 0px; display: flex; flex-direction: column; gap: 0; flex: 1; min-height: 0; }
   .beam-stage { order: -1; width: 100%; flex-shrink: 0; border-radius: 0; border-width: 0 0 1px; background: #181d25; }
   .beam-toolbar { padding: 8px 12px 0; }
   .beam-toolbar .secondary-button { padding: 8px 10px; }

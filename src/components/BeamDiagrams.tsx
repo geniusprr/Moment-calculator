@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Data, Layout } from "plotly.js";
 
 interface BeamDiagramsProps {
@@ -215,6 +215,22 @@ export function BeamDiagrams({
   loading = false,
   shearMarkers = [],
 }: BeamDiagramsProps) {
+  const chartRef = useRef<HTMLDivElement | null>(null);
+  const hasData = x.length > 0;
+  const [chartMargins, setChartMargins] = useState({ left: 50, right: 20 });
+  useEffect(() => {
+    const element = chartRef.current;
+    if (!element) return;
+    const observer = new ResizeObserver(([entry]) => {
+      const workspace = element.closest(".analysis-grid");
+      const inset = workspace ? Number.parseFloat(getComputedStyle(workspace).getPropertyValue("--beam-plot-inset")) || 0 : 0;
+      const margin = inset + .02 * Math.max(0, entry.contentRect.width - 2 * inset);
+      const next = inset > 0 ? { left: margin, right: margin } : { left: 50, right: 20 };
+      setChartMargins((previous) => previous.left === next.left && previous.right === next.right ? previous : next);
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [hasData]);
   const shearPlot = useMemo(
     () => {
       const data = diagramData(x, shear, "#38bdf8", "T", { includeZeroBaseline: true, segmentBySign: true });
@@ -293,8 +309,12 @@ export function BeamDiagrams({
   const [selected, setSelected] = useState<"moment" | "shear" | "deflection" | "normal" | "rotation">("moment");
   const plots = { moment: momentPlot, shear: shearPlot, deflection: deflectionPlot, normal: normalPlot, rotation: rotationPlot };
   const labels = { moment: "Moment", shear: "Kesme", deflection: "Sehim", normal: "Eksenel", rotation: "Eğim" };
-  const hasData = x.length > 0;
   const plot = plots[selected];
+  const alignedLayout: Partial<Layout> = {
+    ...plot.layout,
+    margin: { l: chartMargins.left, r: chartMargins.right, t: 12, b: 40 },
+    xaxis: { ...plot.layout.xaxis, range: [0, x[x.length - 1] || 1], autorange: false },
+  };
 
   return (
     <div className="diagrams-panel panel space-y-4 p-4 sm:p-6">
@@ -310,7 +330,9 @@ export function BeamDiagrams({
           <div className="diagram-tabs" role="group" aria-label="Diyagram seçimi">
             {(Object.keys(labels) as (keyof typeof labels)[]).map((key) => <button type="button" key={key} aria-pressed={selected === key} onClick={() => setSelected(key)}>{labels[key]}</button>)}
           </div>
-          <Plot data={plot.data} layout={plot.layout} config={{ displayModeBar: false, responsive: true }} useResizeHandler style={{ width: "100%", height: "260px" }} />
+          <div ref={chartRef}>
+            <Plot data={plot.data} layout={alignedLayout} config={{ displayModeBar: false, responsive: true }} useResizeHandler style={{ width: "100%", height: "260px" }} />
+          </div>
         </div>
       ) : (
         <div className="panel-muted flex h-[360px] items-center justify-center text-sm text-slate-500">
