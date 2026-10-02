@@ -18,7 +18,10 @@ export type SketchContextTarget =
   | { kind: "udl"; id: string; x: number }
   | { kind: "moment"; id: string; x: number };
 
+export type BeamDeformation = { x: number[]; valuesMm: number[]; magnification: number };
+
 interface BeamSketchProps {
+  deformation?: BeamDeformation;
   length: number;
   supports: SupportInput[];
   pointLoads: PointLoadInput[];
@@ -118,6 +121,7 @@ const getReadableTextColor = (color: string): string => {
 };
 
 export function BeamSketch({
+  deformation,
   length,
   supports,
   pointLoads,
@@ -136,6 +140,16 @@ export function BeamSketch({
   onLengthChange,
 }: BeamSketchProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const [size, setSize] = useState({ width: 1000, height: 256 });
+  useEffect(() => {
+    const element = containerRef.current;
+    if (!element) return;
+    const observer = new ResizeObserver(([entry]) => {
+      setSize({ width: entry.contentRect.width, height: entry.contentRect.height });
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [editingValue, setEditingValue] = useState<{
     type: "pointLoad" | "udl" | "moment" | "dimension";
@@ -547,7 +561,7 @@ export function BeamSketch({
     return segments;
   }, [length, momentLoads, pointLoads, supports, udls]);
 
-  const UDL_AREA_HEIGHT = 64;
+  const UDL_AREA_HEIGHT = Math.min(64, Math.max(32, size.height / 2 - 48));
   const UDL_TOP = `calc(50% - ${12 + UDL_AREA_HEIGHT}px)`;
   const UDL_ARROW_HEAD_HEIGHT = 12;
   const UDL_ARROW_BODY_HEIGHT = UDL_AREA_HEIGHT - UDL_ARROW_HEAD_HEIGHT;
@@ -556,17 +570,21 @@ export function BeamSketch({
 
   return (
     <div
-      className="panel space-y-3 p-4"
+      className="beam-sketch panel space-y-3 p-4"
       onContextMenu={(event) => {
         const x = valueFromPointer(event.clientX);
         openContextMenu(event, { kind: "blank", x });
       }}
     >
-      <div ref={containerRef} className="relative h-64 select-none">
+      <div ref={containerRef} className="beam-sketch-canvas relative h-64 select-none">
+        {deformation && <svg className="absolute inset-0 h-full w-full pointer-events-none" viewBox={`0 0 ${size.width} ${size.height}`} role="img" aria-label="Kirişin sehim eğrisi; pozitif değerler aşağı yönlüdür">
+          <line x1={size.width * .02} x2={size.width * .98} y1={size.height / 2} y2={size.height / 2} stroke="#64748b" strokeWidth="2" strokeDasharray="6 5" />
+          <path d={deformation.x.map((position, i) => `${i ? 'L' : 'M'}${size.width * (.02 + .96 * position / beamLength)},${size.height / 2 + (deformation.valuesMm[i] ?? 0) / 1000 * size.width * .96 / beamLength * deformation.magnification}`).join(' ')} fill="none" stroke="#67e8f9" strokeWidth="6" strokeLinecap="round" />
+        </svg>}
         {/* Realistic Steel Beam (I-Profile) */}
         <div
           className="absolute left-[2%] right-[2%] h-6 flex flex-col shadow-md"
-          style={{ top: 'calc(50% - 12px)' }}
+          style={{ top: 'calc(50% - 12px)', display: deformation ? 'none' : undefined }}
         >
           <div className="h-1 w-full bg-slate-500 rounded-t-sm" /> {/* Top flange */}
           <div className="flex-1 w-full bg-gradient-to-b from-slate-300 via-slate-200 to-slate-300 border-x border-slate-300/50" /> {/* Web */}

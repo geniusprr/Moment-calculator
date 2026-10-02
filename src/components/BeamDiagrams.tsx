@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { Data, Layout } from "plotly.js";
 
 interface BeamDiagramsProps {
@@ -290,10 +290,14 @@ export function BeamDiagrams({
     [x, rotation]
   );
 
+  const [selected, setSelected] = useState<"moment" | "shear" | "deflection" | "normal" | "rotation">("moment");
+  const plots = { moment: momentPlot, shear: shearPlot, deflection: deflectionPlot, normal: normalPlot, rotation: rotationPlot };
+  const labels = { moment: "Moment", shear: "Kesme", deflection: "Sehim", normal: "Eksenel", rotation: "Eğim" };
   const hasData = x.length > 0;
+  const plot = plots[selected];
 
   return (
-    <div className="panel space-y-4 p-6">
+    <div className="diagrams-panel panel space-y-4 p-4 sm:p-6">
       <div className="flex items-center justify-between">
         <div>
           <span className="tag">Diyagramlar</span>
@@ -302,21 +306,11 @@ export function BeamDiagrams({
         {loading && <span className="text-xs uppercase tracking-wide text-slate-400">Çözülüyor...</span>}
       </div>
       {hasData ? (
-        <div className="space-y-6">
-          {/* Put Normal force at the top */}
-          <Plot data={normalPlot.data} layout={normalPlot.layout} config={{ displayModeBar: false, responsive: true }} style={{ width: "100%", height: "260px" }} />
-          {/* Keep Shear next */}
-          <Plot data={shearPlot.data} layout={shearPlot.layout} config={{ displayModeBar: false, responsive: true }} style={{ width: "100%", height: "260px" }} />
-          {/* Moment at the bottom, with flipped sign */}
-          <Plot data={momentPlot.data} layout={momentPlot.layout} config={{ displayModeBar: false, responsive: true }} style={{ width: "100%", height: "260px" }} />
-          {/* Deflection */}
-          {deflection && deflection.length > 0 && (
-            <Plot data={deflectionPlot.data} layout={deflectionPlot.layout} config={{ displayModeBar: false, responsive: true }} style={{ width: "100%", height: "260px" }} />
-          )}
-          {/* Rotation */}
-          {rotation && rotation.length > 0 && (
-            <Plot data={rotationPlot.data} layout={rotationPlot.layout} config={{ displayModeBar: false, responsive: true }} style={{ width: "100%", height: "260px" }} />
-          )}
+        <div>
+          <div className="diagram-tabs" role="group" aria-label="Diyagram seçimi">
+            {(Object.keys(labels) as (keyof typeof labels)[]).map((key) => <button type="button" key={key} aria-pressed={selected === key} onClick={() => setSelected(key)}>{labels[key]}</button>)}
+          </div>
+          <Plot data={plot.data} layout={plot.layout} config={{ displayModeBar: false, responsive: true }} useResizeHandler style={{ width: "100%", height: "260px" }} />
         </div>
       ) : (
         <div className="panel-muted flex h-[360px] items-center justify-center text-sm text-slate-500">

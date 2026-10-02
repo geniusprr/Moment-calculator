@@ -91,3 +91,47 @@ button:focus-visible, summary:focus-visible { outline: 2px solid #67e8f9; outlin
 .simulation-settings input[type="range"] { display: block; width: 100%; margin-top: 16px; accent-color: #67e8f9; }
 .status-note { padding: 10px 12px; border: 1px solid #344656; background: #11232d; font-size: 12px; border-radius: 8px; margin-bottom: 14px; }
 @media (max-width: 640px) { .workspace-heading { align-items: flex-start; } .solver-status { padding: 6px 8px; font-size: 9px; } .simulation-stat strong { font-size: 16px; } }
+
+.analysis-grid { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 20px; align-items: start; }
+.model-inputs { grid-column: 1; grid-row: 1 / span 2; min-width: 0; }
+.beam-stage { grid-column: 2; grid-row: 1; position: relative; min-width: 0; }
+.results-column { grid-column: 2; grid-row: 2; min-width: 0; }
+.beam-stage .beam-sketch { border: 0; background: transparent; box-shadow: none; border-radius: 0; padding: 8px 18px; }
+.beam-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 12px 14px 0; }
+.beam-readout { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 4px 16px 12px; color: #94a3b8; font-size: 11px; font-variant-numeric: tabular-nums; }
+.beam-playback { display: flex; gap: 8px; padding: 0 14px 12px; }
+.beam-settings { position: absolute; right: 10px; top: 55px; width: min(360px, calc(100% - 20px)); max-height: 260px; overflow-y: auto; padding: 16px; background: #181f29; border: 1px solid #415264; border-radius: 12px; box-shadow: 0 10px 40px #0009; z-index: 30; }
+.mobile-workspace-tabs, .mobile-input-footer { display: none; }
+.diagram-tabs { display: flex; gap: 4px; padding: 4px; border-radius: 9px; background: #10161e; }
+.diagram-tabs button { flex: 1; padding: 10px 4px; font-size: 12px; border-radius: 6px; color: #94a3b8; cursor: pointer; }
+.diagram-tabs button[aria-pressed="true"] { background: #2c3946; color: #67e8f9; }
+@media (min-width: 768px) and (max-width: 1100px) { .analysis-grid { grid-template-columns: 300px minmax(0, 1fr); } }
+@media (max-width: 767px) {
+  .beam-app { height: 100dvh; display: flex; flex-direction: column; overflow: hidden; padding-bottom: 0; }
+  .beam-app > header { flex-shrink: 0; }
+  .beam-app > header > div { gap: 6px; padding: 8px 12px; }
+  .beam-app > header h1 { font-size: 15px; }
+  .beam-app > header > div > div { gap: 6px; }
+  .beam-app > header button { font-size: 11px; }
+  .beam-workspace { flex: 1; min-height: 0; gap: 0; padding: 0; }
+  .beam-workspace .workspace-heading { display: none; }
+  .analysis-grid { display: flex; flex-direction: column; gap: 0; flex: 1; min-height: 0; }
+  .beam-stage { order: -1; width: 100%; flex-shrink: 0; border-radius: 0; border-width: 0 0 1px; background: #181d25; }
+  .beam-toolbar { padding: 8px 12px 0; }
+  .beam-toolbar .secondary-button { padding: 8px 10px; }
+  .beam-stage .beam-sketch { padding: 0 18px; }
+  .beam-stage .beam-sketch-canvas { height: clamp(170px, 25dvh, 224px); }
+  .beam-readout { padding: 0 14px 8px; font-size: 10px; }
+  .beam-playback { padding-bottom: 8px; }
+  .beam-playback button { padding: 7px 12px; }
+  .mobile-workspace-tabs { display: flex; border-top: 1px solid #2a3440; }
+  .mobile-workspace-tabs button { flex: 1; min-height: 42px; font-size: 12px; font-weight: 600; color: #8699ad; border-bottom: 2px solid transparent; cursor: pointer; }
+  .mobile-workspace-tabs button[aria-pressed="true"] { color: #67e8f9; border-bottom-color: #67e8f9; background: #12232c; }
+  .model-inputs, .results-column { flex: 1; width: 100%; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 12px 12px max(16px, env(safe-area-inset-bottom)); scroll-padding-bottom: 70px; }
+  .analysis-grid[data-mobile-pane="inputs"] .results-column, .analysis-grid[data-mobile-pane="diagrams"] .model-inputs { display: none; }
+  .mobile-input-footer { display: block; position: sticky; bottom: 0; margin-top: 16px; padding: 10px 0; background: #101319ed; }
+  .mobile-input-footer button { width: 100%; }
+  .beam-form input, .beam-form select, .simulation-settings input:not([type="range"]), .simulation-settings select { font-size: 16px; }
+  .diagrams-panel > div:first-child p { font-size: 11px; }
+  .diagram-tabs button { font-size: 11px; }
+}

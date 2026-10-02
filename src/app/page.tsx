@@ -166,6 +166,7 @@ export default function HomePage() {
   const [chimneyResult, setChimneyResult] = useState<ChimneyPeriodResponse | null>(null);
   const [chimneyError, setChimneyError] = useState<string | null>(null);
   const [isChimneyPending, startChimneyTransition] = useTransition();
+  const [mobilePane, setMobilePane] = useState<"inputs" | "diagrams">("inputs");
   const [view, setView] = useState<"onboarding" | "app">("app");
 
   useEffect(() => {
@@ -996,7 +997,7 @@ export default function HomePage() {
 
   return (
     <main
-      className="pb-16"
+      className={view === "app" && mode === "beam" ? "beam-app pb-16" : "pb-16"}
       onClick={() => {
         if (contextMenu) {
           closeContextMenu();
@@ -1118,13 +1119,17 @@ export default function HomePage() {
           </div>
         </div>
       ) : mode === "beam" ? (
-        <div className="mx-auto flex w-full max-w-[1680px] flex-col gap-4 px-4 pt-4 sm:px-6">
+        <div className="beam-workspace mx-auto flex w-full max-w-[1680px] flex-col gap-4 px-4 pt-4 sm:px-6">
           <div className="workspace-heading">
             <div><p className="eyebrow">MOMENT CALCULATOR / KİRİŞ ANALİZİ</p><h2>Kiriş çalışma alanı</h2><p>Modeli tanımla, yükleri yerleştir ve kirişin davranışını incele.</p></div>
             <span className="solver-status"><i />{error ? "Modeli kontrol et" : result ? "Hesap güncel" : "Hesaplanıyor…"}</span>
           </div>
-          <div className="grid items-start gap-5 xl:grid-cols-[340px_minmax(0,1fr)] 2xl:grid-cols-[340px_minmax(0,1fr)_300px]">
-            <div className="space-y-6">
+          <div className="analysis-grid" data-mobile-pane={mobilePane}>
+            <div className="model-inputs space-y-6" id="beam-inputs" onKeyDown={(event) => {
+              if (event.key === "Enter" && event.target instanceof HTMLInputElement && window.matchMedia("(max-width: 767px)").matches) {
+                event.preventDefault(); event.target.blur(); setMobilePane("diagrams");
+              }
+            }}>
               <section className="panel space-y-3 p-3 sm:p-4">
                 <div className="flex items-center justify-between gap-2">
                   <span className="tag">Ön Ayarlar</span>
@@ -1213,10 +1218,10 @@ export default function HomePage() {
                   ))}
                 </div>
               </section>
+              <div className="mobile-input-footer"><button type="button" className="primary-button" onClick={() => setMobilePane("diagrams")}>Diyagramları gör <span aria-hidden>↓</span></button></div>
             </div>
 
-            <div className="space-y-6">
-              <BeamSketch
+            <BeamSimulation payload={solvePayload} result={result} loading={isPending || (!result && !error)} error={error} renderSketch={(deformation) => <BeamSketch deformation={deformation}
                 length={length}
                 supports={sanitizedSupports}
                 pointLoads={sanitizedPointLoads}
@@ -1233,9 +1238,15 @@ export default function HomePage() {
                 onUdlMagnitudeChange={handleUdlMagnitudeChange}
                 onMomentMagnitudeChange={handleMomentMagnitudeChange}
                 onLengthChange={setLengthAndClear}
-              />
-              <BeamSimulation payload={solvePayload} result={result} loading={isPending || (!result && !error)} error={error} />
+              />}>
+              <div className="mobile-workspace-tabs" role="group" aria-label="Çalışma alanı görünümü">
+                <button type="button" aria-pressed={mobilePane === "inputs"} aria-controls="beam-inputs" onClick={() => setMobilePane("inputs")}>Girişleri düzenle</button>
+                <button type="button" aria-pressed={mobilePane === "diagrams"} aria-controls="beam-results" onClick={() => setMobilePane("diagrams")}>Diyagramlar</button>
+              </div>
+            </BeamSimulation>
+            <div className="results-column space-y-5" id="beam-results">
               <BeamDiagrams
+                key={mobilePane}
                 x={diagramData.x}
                 shear={diagramData.shear}
                 moment={diagramData.moment}
@@ -1245,9 +1256,7 @@ export default function HomePage() {
                 loading={isPending}
                 shearMarkers={shearMarkers}
               />
-            </div>
-
-            <div className="panel space-y-6 p-5 xl:col-span-2 2xl:col-span-1">
+            <div className="panel space-y-6 p-5">
               <div>
                 <span className="tag">Çözüm</span>
                 <p className="text-sm text-slate-400">Mesnet tepkileri ve denge kontrolü</p>
@@ -1320,6 +1329,7 @@ export default function HomePage() {
                   )}
                 </div>
               </div>
+            </div>
             </div>
           </div>
         </div>
